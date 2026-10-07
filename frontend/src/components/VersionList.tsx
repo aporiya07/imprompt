@@ -1,4 +1,5 @@
 import type { PromptVersion, PromptVersionSource } from "../types";
+import { CardHead } from "./ui";
 
 interface Props {
   versions: PromptVersion[];
@@ -10,7 +11,7 @@ const SOURCE_LABELS: Record<PromptVersionSource, string> = {
   analyze: "Analyzed",
   regenerate: "Regenerated",
   refine: "Refined",
-  edit: "Edited by hand",
+  edit: "Edited",
 };
 
 function describe(v: PromptVersion): string {
@@ -24,10 +25,7 @@ export default function VersionList({ versions, activeId, onRestore }: Props) {
   if (versions.length === 0) return null;
   return (
     <section className="card version-card">
-      <div className="card-head">
-        <h2>Prompt Versions</h2>
-        <span className="hint">click to restore</span>
-      </div>
+      <CardHead label="Prompt versions" hint="click to restore" />
       <div className="version-list">
         {versions
           .slice()
@@ -48,7 +46,10 @@ export default function VersionList({ versions, activeId, onRestore }: Props) {
                 <span className="version-when">{describe(v)}</span>
                 <span className="version-time">{new Date(v.ts).toLocaleTimeString()}</span>
               </div>
-              <div className="version-snippet">{v.prompt.slice(0, 90)}{v.prompt.length > 90 ? "…" : ""}</div>
+              <div className="version-snippet">
+                {v.prompt.slice(0, 90)}
+                {v.prompt.length > 90 ? "…" : ""}
+              </div>
             </div>
           ))}
       </div>

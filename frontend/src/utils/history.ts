@@ -33,7 +33,7 @@ function persist(items: HistoryItem[]) {
   try {
     localStorage.setItem(KEY, JSON.stringify(items));
   } catch {
-    // Storage full — retry without thumbnails.
+    // Storage full: retry without thumbnails.
     try {
       localStorage.setItem(KEY, JSON.stringify(items.map((i) => ({ ...i, thumbnail: "" }))));
     } catch {

@@ -9,6 +9,7 @@ import type {
   CreativeIntent,
 } from "../types";
 import { AppError } from "./errors";
+import { sanitizeDeep } from "../utils/sanitize";
 
 export const DEFAULT_MODELS: TargetModel[] = [
   { id: "generic", name: "Generic", supports_negative: true, soft_char_limit: null },
@@ -33,11 +34,14 @@ async function post<T>(path: string, body: unknown): Promise<T> {
   const envelope = await res.json().catch(() => null);
   if (!res.ok || !envelope || envelope.success !== true) {
     const err = envelope?.error;
-    const code = err?.code ?? `http_${res.status}`;
-    const message = err?.message ?? `Request failed (${res.status}).`;
-    throw new AppError(code, message);
+    throw new AppError(
+      err?.code ?? `http_${res.status}`,
+      err?.message ?? `Request failed (${res.status}).`,
+      err?.request_id
+    );
   }
-  return envelope.data as T;
+  // Typography guardrails: AI-generated copy must never carry banned characters into the UI.
+  return sanitizeDeep(envelope.data) as T;
 }
 
 export interface AnalyzePayload {

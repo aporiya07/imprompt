@@ -1,5 +1,6 @@
 import { Fragment } from "react";
 import type { ElementImportance, SubjectRecord, Swatch, VisualDNA } from "../types";
+import { CardHead } from "./ui";
 
 function titleCase(key: string): string {
   return key
@@ -50,11 +51,11 @@ function Section({ title, open = false, children }: { title: string; open?: bool
   );
 }
 
-const IMPORTANCE_TONE: Record<ElementImportance, string> = {
+const IMPORTANCE_DOT: Record<ElementImportance, string> = {
   essential: "chip-essential",
-  supporting: "",
-  incidental: "chip-incidental",
-  uncertain: "chip-uncertain",
+  supporting: "chip keep",
+  incidental: "chip chip-incidental",
+  uncertain: "chip chip-uncertain",
 };
 
 function SubjectCard({ subject }: { subject: SubjectRecord }) {
@@ -64,23 +65,27 @@ function SubjectCard({ subject }: { subject: SubjectRecord }) {
         <b>{subject.description || subject.label}</b>
         <span className="hint">
           {subject.type}
-          {subject.count > 1 ? ` ×${subject.count}` : ""} · {subject.confidence}
+          {subject.count > 1 ? ` ×${subject.count}` : ""}
         </span>
       </div>
       <Kv rows={rowsOf(subject as unknown as Record<string, unknown>)} />
       <Chips items={[...subject.accessories, ...subject.distinguishing_characteristics]} />
-      {subject.interactions.length > 0 && <div className="subject-interactions">↔ {subject.interactions.join(" · ")}</div>}
+      {subject.interactions.length > 0 && (
+        <div className="subject-interactions">Interacts: {subject.interactions.join("; ")}</div>
+      )}
     </div>
   );
 }
 
 function SwatchChips({ swatches }: { swatches: Swatch[] }) {
+  if (swatches.length === 0) return null;
   return (
     <div className="chips">
       {swatches.map((s, i) => (
         <span key={i} className="chip swatch">
           {s.hex && <span className="swatch-dot" style={{ background: `#${s.hex.replace(/^#/, "")}` }} />}
           {s.name || s.hex}
+          {s.hex && <span className="swatch-hex">#{s.hex.replace(/^#/, "").toUpperCase()}</span>}
           {s.role ? ` · ${s.role}` : ""}
         </span>
       ))}
@@ -96,16 +101,12 @@ export default function DnaViewer({ dna }: { dna: VisualDNA }) {
 
   return (
     <section className="card dna" data-testid="visual-dna">
-      <div className="card-head">
-        <h2>Visual Understanding</h2>
-        <span className="hint">
-          {reference.reference_type.replace(/_/g, " ")} · {Math.round((reference.analysis_confidence || 0) * 100)}% confidence
-        </span>
-      </div>
+      <CardHead
+        label="Visual understanding"
+        hint={`${reference.reference_type.replace(/_/g, " ")} · ${Math.round((reference.analysis_confidence || 0) * 100)}% confidence`}
+      />
       {reference.overall_description && <p className="dna-overall">{reference.overall_description}</p>}
-      {reference.layout_description && (
-        <p className="dna-layout">Layout: {reference.layout_description}</p>
-      )}
+      {reference.layout_description && <p className="dna-layout">{reference.layout_description}</p>}
 
       {dna.subjects.length > 0 && (
         <Section title="Subjects" open>
@@ -125,17 +126,17 @@ export default function DnaViewer({ dna }: { dna: VisualDNA }) {
 
       <Section title="Lighting">
         <Kv rows={rowsOf(dna.lighting)} />
-        {Array.isArray((dna.lighting as { practical_lights?: string[] }).practical_lights) &&
-          (dna.lighting as { practical_lights?: string[] }).practical_lights!.length > 0 && (
-            <Chips items={(dna.lighting as { practical_lights: string[] }).practical_lights} />
-          )}
       </Section>
 
       <Section title="Color">
         <SwatchChips swatches={dna.color.dominant} />
         <SwatchChips swatches={dna.color.secondary} />
         <SwatchChips swatches={dna.color.accent} />
-        <Kv rows={rowsOf(dna.color as unknown as Record<string, unknown>).filter(([k]) => !["Dominant", "Secondary", "Accent"].includes(k))} />
+        <Kv
+          rows={rowsOf(dna.color as unknown as Record<string, unknown>).filter(
+            ([k]) => !["Dominant", "Secondary", "Accent"].includes(k)
+          )}
+        />
       </Section>
 
       <Section title="Environment">
@@ -150,25 +151,27 @@ export default function DnaViewer({ dna }: { dna: VisualDNA }) {
         )}
       </Section>
 
-      <Section title="Style & Mood">
-        <Kv rows={[...rowsOf(dna.style), ...rowsOf(dna.mood)]} />
+      <Section title="Style">
+        <Kv rows={rowsOf(dna.style)} />
+      </Section>
+
+      <Section title="Mood">
+        <Kv rows={rowsOf(dna.mood)} />
         <Chips items={dna.mood?.emotional_tone ?? []} />
       </Section>
 
       {materials.length > 0 && (
-        <Section title="Materials & Texture">
+        <Section title="Materials">
           <ul className="mat-list">
             {materials.map((m, i) => (
-              <li key={i}>
-                {[m.object, m.material, m.texture, m.reflectivity, m.appearance].filter(Boolean).join(" — ")}
-              </li>
+              <li key={i}>{[m.object, m.material, m.texture, m.reflectivity, m.appearance].filter(Boolean).join(", ")}</li>
             ))}
           </ul>
         </Section>
       )}
 
       {dna.typography?.present && (
-        <Section title="Typography & Graphics" open>
+        <Section title="Typography" open>
           <Chips items={dna.typography.text_content ?? []} />
           <Chips items={dna.typography.graphics ?? []} />
           <Kv rows={rowsOf(dna.typography as unknown as Record<string, unknown>)} />
@@ -176,7 +179,7 @@ export default function DnaViewer({ dna }: { dna: VisualDNA }) {
       )}
 
       {relationships.length > 0 && (
-        <Section title="Spatial Relationships">
+        <Section title="Relationships">
           <ul className="mat-list">
             {relationships.map((r, i) => {
               const chain = [r.subject, r.relation, r.object].filter(Boolean).join(" → ");
@@ -187,17 +190,17 @@ export default function DnaViewer({ dna }: { dna: VisualDNA }) {
       )}
 
       {elements.length > 0 && (
-        <Section title="Important Elements" open>
+        <Section title="Important elements" open>
           <div className="chips">
             {elements.map((e, i) => (
-              <span key={i} className={`chip ${IMPORTANCE_TONE[e.importance] ?? ""}`} title={e.reason || e.importance}>
-                {e.importance === "essential" ? "★ " : e.importance === "uncertain" ? "? " : ""}
+              <span key={i} className={`chip ${IMPORTANCE_DOT[e.importance] ?? ""}`} title={e.reason || e.importance}>
+                <span className="importance-dot" />
                 {e.description}
               </span>
             ))}
           </div>
           <div className="hint importance-legend">
-            ★ essential · plain = supporting · faded = incidental · ? = uncertain
+            accent marker: essential, plain: supporting, faded: incidental, amber: uncertain
           </div>
         </Section>
       )}
@@ -217,7 +220,7 @@ export default function DnaViewer({ dna }: { dna: VisualDNA }) {
       </Section>
 
       <details className="dna-section raw-json">
-        <summary>Raw JSON (debug)</summary>
+        <summary>Developer details</summary>
         <pre className="raw-json-body">{JSON.stringify(dna, null, 2)}</pre>
       </details>
     </section>

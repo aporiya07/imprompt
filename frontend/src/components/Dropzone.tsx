@@ -1,4 +1,5 @@
 import { useRef, useState } from "react";
+import { Image as ImageIcon, Link2, Upload } from "lucide-react";
 import type { UploadedImage } from "../types";
 import { aspectRatioLabel, formatBytes } from "../utils/image";
 
@@ -28,7 +29,7 @@ export default function Dropzone({ image, onFile, onFetchUrl, disabled, fetching
               {image!.name}
             </div>
             <div className="preview-dims">
-              {image!.width} × {image!.height} px · {aspectRatioLabel(image!.width, image!.height)} ·{" "}
+              {image!.width} × {image!.height} · {aspectRatioLabel(image!.width, image!.height)} ·{" "}
               {formatBytes(image!.size)}
             </div>
           </div>
@@ -45,7 +46,8 @@ export default function Dropzone({ image, onFile, onFetchUrl, disabled, fetching
           }}
         />
         <button className="btn ghost small" disabled={disabled} onClick={() => inputRef.current?.click()}>
-          Replace image
+          <Upload className="btn-icon" />
+          Replace
         </button>
       </div>
     );
@@ -66,6 +68,7 @@ export default function Dropzone({ image, onFile, onFetchUrl, disabled, fetching
           role="tab"
           aria-selected={mode === "upload"}
         >
+          <Upload size={14} />
           Upload
         </button>
         <button
@@ -74,6 +77,7 @@ export default function Dropzone({ image, onFile, onFetchUrl, disabled, fetching
           role="tab"
           aria-selected={mode === "url"}
         >
+          <Link2 size={14} />
           Image URL
         </button>
       </div>
@@ -101,9 +105,11 @@ export default function Dropzone({ image, onFile, onFetchUrl, disabled, fetching
             if ((e.key === "Enter" || e.key === " ") && !disabled) inputRef.current?.click();
           }}
         >
-          <div className="dz-icon">🖼️</div>
-          <div className="dz-title">Drop image here</div>
-          <div className="dz-sub">or click to upload · PNG, JPG, WEBP · up to 10 MB</div>
+          <div className="dz-icon">
+            <ImageIcon size={20} strokeWidth={1.5} />
+          </div>
+          <div className="dz-title">Drop a reference image</div>
+          <div className="dz-sub">PNG, JPG, WEBP, up to 10 MB</div>
           <input
             ref={inputRef}
             type="file"
@@ -119,7 +125,7 @@ export default function Dropzone({ image, onFile, onFetchUrl, disabled, fetching
       ) : (
         <div className="dropzone url-mode">
           <div className="dz-title">Paste an image URL</div>
-          <div className="dz-sub">Any public image link — we fetch and validate it server-side</div>
+          <div className="dz-sub">Any public image link: it is fetched and validated server-side</div>
           <div className="dz-url-row">
             <input
               type="url"
@@ -130,9 +136,10 @@ export default function Dropzone({ image, onFile, onFetchUrl, disabled, fetching
                 if (e.key === "Enter") submitUrl();
               }}
               disabled={disabled || fetchingUrl}
+              aria-label="Image URL"
             />
             <button className="btn primary" disabled={disabled || fetchingUrl || !url.trim()} onClick={submitUrl}>
-              {fetchingUrl ? "Fetching…" : "Use Image"}
+              Use Image
             </button>
           </div>
         </div>

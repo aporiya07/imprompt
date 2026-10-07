@@ -1,4 +1,6 @@
 import { useState } from "react";
+import { Check, Copy } from "lucide-react";
+import { CardHead } from "./ui";
 
 export default function NegativeCard({ negative }: { negative: string }) {
   const [copied, setCopied] = useState(false);
@@ -15,12 +17,15 @@ export default function NegativeCard({ negative }: { negative: string }) {
 
   return (
     <section className="card negative-card">
-      <div className="card-head">
-        <h2>Negative Prompt</h2>
-        <button className="btn ghost small" onClick={() => void onCopy()}>
-          {copied ? "Copied ✓" : "Copy"}
-        </button>
-      </div>
+      <CardHead
+        label="Negative prompt"
+        actions={
+          <button className="btn ghost small" onClick={() => void onCopy()}>
+            {copied ? <Check className="btn-icon" /> : <Copy className="btn-icon" />}
+            {copied ? "Copied" : "Copy"}
+          </button>
+        }
+      />
       <p className="negative-text">{negative}</p>
     </section>
   );

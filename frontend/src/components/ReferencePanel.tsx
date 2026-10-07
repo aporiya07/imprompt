@@ -1,6 +1,8 @@
 import { useRef } from "react";
+import { Upload } from "lucide-react";
 import type { UploadedImage } from "../types";
 import { aspectRatioLabel } from "../utils/image";
+import { CardHead } from "./ui";
 
 interface Props {
   image: UploadedImage | null;
@@ -12,18 +14,18 @@ export default function ReferencePanel({ image, onFile, disabled }: Props) {
   const inputRef = useRef<HTMLInputElement>(null);
   return (
     <section className="card reference">
-      <div className="card-head">
-        <h2>Reference Image</h2>
+      <CardHead label="Reference" actions={
         <button className="btn ghost small" disabled={disabled} onClick={() => inputRef.current?.click()}>
+          <Upload className="btn-icon" />
           Replace
         </button>
-      </div>
+      } />
       {image?.dataUrl ? (
         <>
           <img src={image.dataUrl} alt="Reference" className="reference-img" />
           {image.width > 0 && (
             <div className="reference-meta">
-              {image.width} × {image.height} px · {aspectRatioLabel(image.width, image.height)}
+              {image.width} × {image.height} · {aspectRatioLabel(image.width, image.height)}
             </div>
           )}
         </>

@@ -1,5 +1,7 @@
 import { useState } from "react";
+import { Check, Copy, TriangleAlert } from "lucide-react";
 import type { ShotResult } from "../types";
+import { CardHead } from "./ui";
 
 interface Props {
   shots: ShotResult[];
@@ -26,21 +28,26 @@ export default function ShotsList({ shots, layout }: Props) {
 
   return (
     <section className="card shots-card">
-      <div className="card-head">
-        <h2>Shot List</h2>
-        <span className="hint">{layout ? `Detected: ${layout}` : `${shots.length} shots`}</span>
-      </div>
-      <div className="shots-list">
+      <CardHead
+        label="Shot list"
+        hint={layout ? layout : `${shots.length} panels`}
+      />
+      <div className="shots-grid">
         {shots.map((shot) => (
           <details key={shot.index} className="shot-item">
             <summary>
-              <span className="shot-index">Shot {String(shot.index).padStart(2, "0")}</span>
-              <span className="shot-title">{shot.title || "—"}</span>
-              {shot.quality && (
-                <span className={`shot-score ${shot.quality.score >= 85 ? "good" : shot.quality.score >= 60 ? "ok" : "poor"}`}>
-                  {shot.quality.score}
-                </span>
-              )}
+              <span className="shot-thumb">
+                <span className="shot-num">{String(shot.index).padStart(2, "0")}</span>
+              </span>
+              <span className="shot-meta">
+                <span className="shot-index">Shot {String(shot.index).padStart(2, "0")}</span>
+                <span className="shot-title">{shot.title || "Untitled panel"}</span>
+                {shot.quality && (
+                  <span className={`shot-score ${shot.quality.score >= 85 ? "good" : shot.quality.score >= 60 ? "ok" : "poor"}`}>
+                    quality {shot.quality.score}
+                  </span>
+                )}
+              </span>
             </summary>
             <div className="shot-body">
               <p className="prompt-text">{shot.prompt}</p>
@@ -48,16 +55,18 @@ export default function ShotsList({ shots, layout }: Props) {
               {shot.quality && shot.quality.warnings.length > 0 && (
                 <ul className="quality-list warnings">
                   {shot.quality.warnings.map((w, i) => (
-                    <li key={i}>⚠ {w}</li>
+                    <li key={i}>
+                      <TriangleAlert />
+                      {w}
+                    </li>
                   ))}
                 </ul>
               )}
               <div className="refine-row">
-                <span className="hint">
-                  {shot.prompt.length} characters
-                </span>
+                <span className="hint mono">{shot.prompt.length} chars</span>
                 <button className="btn primary small" onClick={() => void onCopy(shot)}>
-                  {copiedIndex === shot.index ? "Copied ✓" : "Copy Prompt"}
+                  {copiedIndex === shot.index ? <Check className="btn-icon" /> : <Copy className="btn-icon" />}
+                  {copiedIndex === shot.index ? "Copied" : "Copy prompt"}
                 </button>
               </div>
             </div>

@@ -1,5 +1,7 @@
 import { useState } from "react";
+import { Wand2 } from "lucide-react";
 import type { RefineEntry } from "../types";
+import { CardHead } from "./ui";
 
 interface Props {
   busy: boolean;
@@ -19,20 +21,22 @@ export default function RefinePanel({ busy, log, onRefine }: Props) {
 
   return (
     <section className="card refine">
-      <h2>Refine Prompt</h2>
+      <CardHead label="Refinement" />
       <textarea
         value={text}
         rows={3}
-        placeholder="Tell the AI what to change — e.g. “Keep everything but change the lighting to sunset.”"
+        placeholder="Tell the AI what to change, e.g. “Keep everything but change the lighting to sunset.”"
         onChange={(e) => setText(e.target.value)}
         onKeyDown={(e) => {
           if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) submit();
         }}
+        aria-label="Refinement instruction"
       />
       <div className="refine-row">
         <span className="hint">Ctrl/⌘ + Enter to apply</span>
         <button className="btn primary" disabled={busy || !text.trim()} onClick={submit}>
-          {busy ? "Revising…" : "Apply Changes"}
+          <Wand2 className="btn-icon" />
+          {busy ? "Revising…" : "Refine prompt"}
         </button>
       </div>
       {log.length > 0 && (
@@ -46,12 +50,14 @@ export default function RefinePanel({ busy, log, onRefine }: Props) {
                 <div className="chips">
                   {entry.change.map((c, j) => (
                     <span key={`c${j}`} className="chip change">
-                      changed: {c}
+                      <span className="importance-dot" />
+                      {c}
                     </span>
                   ))}
                   {entry.keep.map((k, j) => (
                     <span key={`k${j}`} className="chip keep">
-                      kept: {k}
+                      <span className="importance-dot" />
+                      {k}
                     </span>
                   ))}
                 </div>

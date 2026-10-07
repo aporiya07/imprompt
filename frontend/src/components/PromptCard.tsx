@@ -1,4 +1,6 @@
 import { useState } from "react";
+import { Check, Copy, PenLine, RefreshCw } from "lucide-react";
+import { CardHead } from "./ui";
 
 interface Props {
   prompt: string;
@@ -23,7 +25,15 @@ async function copyText(text: string) {
   }
 }
 
-export default function PromptCard({ prompt, modelName, busy, charLimit, label = "Optimal Prompt", onRegenerate, onEdit }: Props) {
+export default function PromptCard({
+  prompt,
+  modelName,
+  busy,
+  charLimit,
+  label = "Prompt",
+  onRegenerate,
+  onEdit,
+}: Props) {
   const [copied, setCopied] = useState(false);
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState("");
@@ -50,24 +60,36 @@ export default function PromptCard({ prompt, modelName, busy, charLimit, label =
 
   return (
     <section className="card prompt-card">
-      <div className="card-head">
-        <h2>{label}</h2>
-        <div className="actions">
-          {!editing && (
+      <CardHead
+        label={label}
+        actions={
+          editing ? (
+            <>
+              <button className="btn ghost small" onClick={() => setEditing(false)}>
+                Cancel
+              </button>
+              <button className="btn primary small" onClick={saveEdit} disabled={!draft.trim()}>
+                Save
+              </button>
+            </>
+          ) : (
             <>
               <button className="btn ghost small" onClick={startEdit} disabled={busy || !prompt}>
+                <PenLine className="btn-icon" />
                 Edit
               </button>
               <button className="btn ghost small" onClick={onRegenerate} disabled={busy}>
-                ↻ Regenerate
+                <RefreshCw className="btn-icon" />
+                Regenerate
+              </button>
+              <button className="btn primary small" onClick={() => void onCopy()} disabled={busy || !prompt}>
+                {copied ? <Check className="btn-icon" /> : <Copy className="btn-icon" />}
+                {copied ? "Copied" : "Copy"}
               </button>
             </>
-          )}
-          <button className="btn primary small" onClick={() => void onCopy()} disabled={busy || !prompt}>
-            {copied ? "Copied ✓" : "Copy"}
-          </button>
-        </div>
-      </div>
+          )
+        }
+      />
 
       {editing ? (
         <div className="prompt-edit">
@@ -82,35 +104,22 @@ export default function PromptCard({ prompt, modelName, busy, charLimit, label =
             }}
           />
           <div className="refine-row">
-            <span className="hint">
-              {draft.trim().length} characters · Esc to cancel · Ctrl/⌘+Enter to save
-            </span>
-            <div className="actions">
-              <button className="btn ghost small" onClick={() => setEditing(false)}>
-                Cancel
-              </button>
-              <button className="btn primary small" onClick={saveEdit} disabled={!draft.trim()}>
-                Save
-              </button>
-            </div>
+            <span className="hint mono">{draft.trim().length} characters · Esc cancels · Ctrl/⌘+Enter saves</span>
           </div>
         </div>
       ) : prompt ? (
         <p className="prompt-text">{prompt}</p>
       ) : (
-        <p className="empty-note">No prompt yet — regenerate to write one.</p>
+        <p className="empty-note">No prompt yet: regenerate to write one.</p>
       )}
 
       {!editing && (
         <div className="prompt-foot">
           <span>
-            written for <b>{modelName}</b> · {prompt.length} characters
+            written for <b>{modelName}</b>
           </span>
-          {overLimit && (
-            <span className="char-warn">
-              over the ~{charLimit}-character comfort zone for {modelName} — long prompts can dilute focus
-            </span>
-          )}
+          <span className="mono">{prompt.length} chars</span>
+          {overLimit && <span className="char-warn">over the ~{charLimit}-character comfort zone for {modelName}</span>}
         </div>
       )}
     </section>

@@ -1,5 +1,7 @@
+import { X } from "lucide-react";
 import type { HistoryItem } from "../types";
 import { MODE_LABELS } from "../types";
+import { CardHead } from "./ui";
 
 interface Props {
   items: HistoryItem[];
@@ -12,38 +14,46 @@ export default function HistoryPanel({ items, onRestore, onDelete, onClear }: Pr
   if (items.length === 0) return null;
   return (
     <section className="card history">
-      <div className="card-head">
-        <h2>Recent</h2>
-        <button className="btn ghost small" onClick={onClear}>
-          Clear
-        </button>
-      </div>
+      <CardHead
+        label="History"
+        actions={
+          <button className="btn ghost small" onClick={onClear}>
+            Clear
+          </button>
+        }
+      />
       <div className="history-list">
         {items.map((item) => (
-          <div key={item.id} className="history-item" onClick={() => onRestore(item)} role="button" tabIndex={0}>
+          <div
+            key={item.id}
+            className="history-item"
+            onClick={() => onRestore(item)}
+            role="button"
+            tabIndex={0}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") onRestore(item);
+            }}
+          >
             {item.thumbnail ? (
               <img src={item.thumbnail} alt="" className="history-thumb" />
             ) : (
               <span className="history-thumb placeholder" />
             )}
             <span className="history-meta">
-              <span className="history-line1">
-                {MODE_LABELS[item.mode]} · {item.targetModel}
-              </span>
+              <span className="history-line1">{MODE_LABELS[item.mode]}</span>
               <span className="history-line2">{item.prompt.slice(0, 90)}…</span>
               <span className="history-line3">{new Date(item.ts).toLocaleString()}</span>
             </span>
-            <span
+            <button
               className="history-delete"
-              role="button"
-              aria-label="Delete"
+              aria-label="Delete entry"
               onClick={(e) => {
                 e.stopPropagation();
                 onDelete(item.id);
               }}
             >
-              ×
-            </span>
+              <X size={14} />
+            </button>
           </div>
         ))}
       </div>

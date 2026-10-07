@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
+import { Moon, ScanSearch, Sun } from "lucide-react";
 import CreativeDirectionCard from "./components/CreativeDirectionCard";
 import DnaViewer from "./components/DnaViewer";
 import Dropzone from "./components/Dropzone";
@@ -13,11 +14,12 @@ import ShotsList from "./components/ShotsList";
 import VersionList from "./components/VersionList";
 import WorkingCard from "./components/WorkingCard";
 import { api, DEFAULT_MODELS } from "./services/api";
-import { friendlyMessage } from "./services/errors";
+import { errorCodeOf, friendlyMessage, requestIdOf } from "./services/errors";
 import type {
   CreativeIntent,
   HistoryItem,
   Mode,
+  PromptQuality,
   PromptVersion,
   PromptVersionSource,
   ShotResult,
@@ -63,12 +65,14 @@ export default function App() {
   const [busy, setBusy] = useState<Busy>(null);
   const [urlBusy, setUrlBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [errorCode, setErrorCode] = useState<string | undefined>(undefined);
+  const [errorRequestId, setErrorRequestId] = useState<string | undefined>(undefined);
   const [errorAction, setErrorAction] = useState<BannerAction | null>(null);
   const [dna, setDna] = useState<VisualDNA | null>(null);
   const [intent, setIntent] = useState<CreativeIntent | null>(null);
   const [shots, setShots] = useState<ShotResult[]>([]);
   const [layout, setLayout] = useState<string | null>(null);
-  const [quality, setQuality] = useState<import("./types").PromptQuality | null>(null);
+  const [quality, setQuality] = useState<PromptQuality | null>(null);
   const [prompt, setPrompt] = useState("");
   const [negative, setNegative] = useState<string | null>(null);
   const [supportsNegative, setSupportsNegative] = useState(true);
@@ -86,6 +90,15 @@ export default function App() {
 
   function reportError(e: unknown) {
     setError(friendlyMessage(e));
+    setErrorCode(errorCodeOf(e));
+    setErrorRequestId(requestIdOf(e));
+    setErrorAction(null);
+  }
+
+  function clearError() {
+    setError(null);
+    setErrorCode(undefined);
+    setErrorRequestId(undefined);
     setErrorAction(null);
   }
 
@@ -104,8 +117,7 @@ export default function App() {
   }
 
   async function onFile(file: File) {
-    setError(null);
-    setErrorAction(null);
+    clearError();
     try {
       adoptImage(await loadImageFile(file));
     } catch (e) {
@@ -115,8 +127,7 @@ export default function App() {
 
   async function onFetchUrl(url: string) {
     setUrlBusy(true);
-    setError(null);
-    setErrorAction(null);
+    clearError();
     try {
       const fetched = await api.fetchImage(url);
       const name = decodeURIComponent(url.split("/").pop()?.split("?")[0] || "image-from-url").slice(0, 80);
@@ -130,17 +141,15 @@ export default function App() {
 
   function reset() {
     setImage(null);
-    setDna(null);
-    setIntent(null);
-    setShots([]);
-    setLayout(null);
-    setQuality(null);
-    setPrompt("");
-    setNegative(null);
-    setVersions([]);
-    setActiveVersionId(null);
-    setError(null);
-    setErrorAction(null);
+    adoptImage({
+      dataUrl: "",
+      width: 0,
+      height: 0,
+      name: "",
+      size: 0,
+    });
+    setImage(null);
+    clearError();
     setPhase("setup");
   }
 
@@ -165,8 +174,7 @@ export default function App() {
   const analyze = useCallback(async () => {
     if (!image) return;
     setBusy("analyzing");
-    setError(null);
-    setErrorAction(null);
+    clearError();
     try {
       const data = await api.analyze({
         image: image.dataUrl,
@@ -184,7 +192,8 @@ export default function App() {
       setNegative(data.negative_prompt);
       setPhase("result");
       if (data.prompt_error) {
-        setError(`The image was analyzed, but prompt generation failed — ${data.prompt_error.message}`);
+        setError(`The image was analyzed, but prompt generation failed: ${data.prompt_error.message}`);
+        setErrorCode(data.prompt_error.code);
         setErrorAction({ label: "Retry prompt", run: () => void regenerate() });
       } else {
         const v = newVersion("analyze", data.prompt ?? "", data.negative_prompt, { targetModel: currentModelName });
@@ -204,8 +213,7 @@ export default function App() {
     if (!dna) return;
     const target = modelId ?? targetModel;
     setBusy("regenerating");
-    setError(null);
-    setErrorAction(null);
+    clearError();
     try {
       const data = await api.generatePrompt({
         visual_dna: dna,
@@ -239,8 +247,7 @@ export default function App() {
   async function refine(text: string) {
     if (!dna || !prompt) return;
     setBusy("refining");
-    setError(null);
-    setErrorAction(null);
+    clearError();
     try {
       const data = await api.refinePrompt({
         visual_dna: dna,
@@ -297,8 +304,7 @@ export default function App() {
     setVersions([v]);
     setActiveVersionId(v.id);
     setPhase("result");
-    setError(null);
-    setErrorAction(null);
+    clearError();
   }
 
   const refineEntries = versions
@@ -311,20 +317,21 @@ export default function App() {
     <div className="app">
       <header className="topbar">
         <div className="brand">
-          VISURA <span className="brand-badge">AI</span>
+          VISURA
+          <span className="brand-descriptor">visual reverse engineering</span>
         </div>
         <div className="topbar-actions">
           {phase === "result" && (
             <button className="btn ghost small" onClick={reset}>
-              New Image
+              New image
             </button>
           )}
           <button
-            className="btn ghost small theme-toggle"
+            className="btn ghost small icon-btn"
             onClick={() => setTheme(theme === "dark" ? "light" : "dark")}
-            aria-label="Toggle theme"
+            aria-label={theme === "dark" ? "Switch to light theme" : "Switch to dark theme"}
           >
-            {theme === "dark" ? "☀" : "☾"}
+            {theme === "dark" ? <Sun size={15} /> : <Moon size={15} />}
           </button>
         </div>
       </header>
@@ -332,23 +339,22 @@ export default function App() {
       {error && (
         <ErrorBanner
           message={error}
-          onDismiss={() => {
-            setError(null);
-            setErrorAction(null);
-          }}
+          onDismiss={clearError}
           actionLabel={errorAction?.label}
           onAction={errorAction ? () => errorAction.run() : undefined}
+          code={errorCode}
+          requestId={errorRequestId}
         />
       )}
 
       {phase === "setup" ? (
         <main className="setup">
           <h1 className="hero-title">
-            Turn any visual reference into an <em>optimized AI prompt</em>.
+            Reverse-engineer the visual logic of any reference <em>into a generation-ready prompt</em>.
           </h1>
           <p className="hero-sub">
-            Reverse-engineer the visual logic of an image — subjects, composition, lighting, mood — into a
-            generation-ready prompt for your target model.
+            Subjects, composition, lighting, color and mood, extracted as structured Visual DNA and rebuilt
+            for your target model.
           </p>
 
           <Dropzone
@@ -362,7 +368,7 @@ export default function App() {
           <div className="controls card">
             <div className="controls-grid">
               <label className="field">
-                <span className="field-label">Target Model</span>
+                <span className="field-label">Target model</span>
                 <select value={targetModel} onChange={(e) => onModelChange(e.target.value)}>
                   {models.map((m) => (
                     <option key={m.id} value={m.id}>
@@ -372,7 +378,7 @@ export default function App() {
                 </select>
               </label>
               <label className="field">
-                <span className="field-label">Reference Intent</span>
+                <span className="field-label">Reference intent</span>
                 <select value={mode} onChange={(e) => setMode(e.target.value as Mode)}>
                   {(Object.keys(MODE_LABELS) as Mode[]).map((m) => (
                     <option key={m} value={m}>
@@ -386,7 +392,7 @@ export default function App() {
               <textarea
                 className="instruction"
                 rows={2}
-                placeholder="Describe the change — e.g. “Replace the background with a futuristic laboratory.”"
+                placeholder="Describe the change, e.g. “Replace the background with a futuristic laboratory.”"
                 value={instruction}
                 onChange={(e) => setInstruction(e.target.value)}
               />
@@ -398,7 +404,8 @@ export default function App() {
             disabled={!image || busy !== null || (mode === "modify" && !instruction.trim())}
             onClick={() => void analyze()}
           >
-            {busy === "analyzing" ? "Analyzing…" : "Analyze Image"}
+            <ScanSearch className="btn-icon" />
+            {busy === "analyzing" ? "Analyzing…" : "Analyze reference"}
           </button>
 
           {busy === "analyzing" && <WorkingCard />}
@@ -418,19 +425,15 @@ export default function App() {
               {dna && <DnaViewer dna={dna} />}
             </aside>
             <section className="result-right">
-              {busy === "regenerating" && <WorkingCard label={`Adapting the prompt for ${currentModelName}…`} />}
-              {isCollage && (
-                <div className="collage-banner">
-                  Moodboard detected — {layout ?? `${shots.length} panels`} · master direction below, per-shot
-                  prompts in the shot list
-                </div>
+              {busy === "regenerating" && (
+                <WorkingCard label={`Adapting the prompt for ${currentModelName}`} />
               )}
               <PromptCard
                 prompt={prompt}
                 modelName={currentModelName}
                 busy={busy !== null}
                 charLimit={charLimit}
-                label={isCollage ? "Master Creative Direction" : "Optimal Prompt"}
+                label={isCollage ? "Master creative direction" : "Prompt"}
                 onRegenerate={() => void regenerate()}
                 onEdit={applyEdit}
               />
@@ -438,8 +441,8 @@ export default function App() {
               {supportsNegative && negative && <NegativeCard negative={negative} />}
               {!supportsNegative && negative && (
                 <p className="hint negative-note">
-                  Note: {currentModelName} has no separate negative prompt — avoidances are already phrased inside the
-                  prompt.
+                  Note: {currentModelName} has no separate negative prompt; avoidances are already phrased inside
+                  the prompt.
                 </p>
               )}
               <CreativeDirectionCard intent={intent} />
@@ -457,7 +460,7 @@ export default function App() {
         </main>
       )}
 
-      <footer className="footer">VISURA · image → prompt · v0.2</footer>
+      <footer className="footer">VISURA · v0.2</footer>
     </div>
   );
 }
