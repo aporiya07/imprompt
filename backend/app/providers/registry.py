@@ -83,11 +83,23 @@ class RoleExecutor:
         )
 
     async def run_text(
-        self, *, system_prompt: str, user_prompt: str, validate: Callable[[str], T], max_output_tokens: int | None = None
+        self,
+        *,
+        system_prompt: str,
+        user_prompt: str,
+        validate: Callable[[str], T],
+        max_output_tokens: int | None = None,
+        temperature: float | None = None,
     ) -> ProviderOutcome:
-        return await self._run(
-            system_prompt=system_prompt, user_prompt=user_prompt, validate=validate, max_output_tokens=max_output_tokens
-        )
+        kwargs: dict = {
+            "system_prompt": system_prompt,
+            "user_prompt": user_prompt,
+            "validate": validate,
+            "max_output_tokens": max_output_tokens,
+        }
+        if temperature is not None:
+            kwargs["temperature"] = temperature
+        return await self._run(**kwargs)
 
     async def _run(self, **kwargs) -> ProviderOutcome:
         validate: Callable[[str], T] = kwargs.pop("validate")

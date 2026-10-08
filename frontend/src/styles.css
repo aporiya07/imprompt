@@ -1149,6 +1149,12 @@ select {
   background: var(--foreground-subtle);
 }
 
+.quality-coverage {
+  margin: 0 0 var(--space-2);
+  font-size: 0.8125rem;
+  color: var(--foreground-muted);
+}
+
 .quality-bar-fill.good {
   background: var(--success);
 }

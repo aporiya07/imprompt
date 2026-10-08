@@ -1,10 +1,11 @@
 """Prompt construction stage (spec Phases 5, 7, 9).
 
-Inputs are always typed artifacts — Visual DNA + CreativeIntent (+ CollageAnalysis
-for moodboards) + the user's instruction — rendered through editable templates and
-finished by the target-model adapter. Provider output is parsed and validated
-inside the executor boundary (retry/fallback applies to malformed output), then
-post-processed and scored by the deterministic diagnostics.
+Inputs are typed artifacts: Visual DNA + CreativeIntent (+ CollageAnalysis
+for moodboards) + a structured PromptSpec + the user's instruction. These are
+rendered through editable templates and finished by the target-model adapter.
+Provider output is parsed and validated inside the executor boundary
+(retry/fallback applies to malformed output), then post-processed and scored
+by the deterministic diagnostics (including visual coverage).
 """
 import json
 import logging
@@ -17,6 +18,7 @@ from app.models.intent import CreativeIntent, derive_intent_from_dna
 from app.models.quality import PromptQuality
 from app.prompting.adapters.base import PromptTarget
 from app.prompting.diagnostics import validate_prompt
+from app.prompting.prompt_spec import build_prompt_spec
 from app.prompts.loader import load_template
 from app.providers.registry import RoleExecutor
 from app.utils.errors import MalformedAIResponseError
@@ -26,6 +28,8 @@ log = logging.getLogger("imprompt.optimizer")
 
 PROMPT_MAX_OUTPUT_TOKENS = 4096
 COLLAGE_MAX_OUTPUT_TOKENS = 8192
+# Lower creativity than the provider default (0.8) to reduce poetic summarization.
+PROMPT_TEMPERATURE = 0.35
 
 # mode → (template name, extraction aspect or None)
 _TEMPLATE_BY_MODE: dict[PromptMode, tuple[str, str | None]] = {
@@ -57,9 +61,12 @@ _ASPECT_GUIDANCE: dict[str, str] = {
         "not what specific objects are colored."
     ),
     "pose": (
-        "Extract pose and body language only: body orientation, weight distribution, hand and arm "
-        "placement, gaze direction, facial expression and interactions between subjects. The token "
-        "[SUBJECT] replaces the person(s). Do not carry over identity, wardrobe or scene."
+        "Extract pose and body language only: body state, torso/shoulder/hip orientation, head and "
+        "face orientation, weight distribution, stance, leg/foot position when visible, left/right "
+        "hand and arm placement, gestures, gaze direction and gaze target, facial expression, "
+        "contact points, relative depth, overlap and interactions between subjects. The token "
+        "[SUBJECT] replaces the person(s). Do not carry over identity, wardrobe or scene. Never "
+        "invent cropped or occluded anatomy; state it as not visible."
     ),
 }
 
@@ -81,6 +88,7 @@ def _user_payload(
     target: PromptTarget,
     instruction: str | None,
     current_prompt: str | None,
+    mode: PromptMode,
     extra: dict | None = None,
 ) -> str:
     body: dict = {
@@ -88,13 +96,17 @@ def _user_payload(
         "target_model": {"id": target.id, "name": target.name},
         "visual_dna": json.loads(dna.model_dump_json()),
         "creative_intent": json.loads(intent.model_dump_json()),
+        "prompt_spec": build_prompt_spec(dna, intent, mode),
         "instruction": instruction,
         "current_prompt": current_prompt,
     }
     if extra:
         body.update(extra)
-    return "Apply the system instructions to the following payload and return only the required JSON object:\n" + json.dumps(
-        body, ensure_ascii=False, indent=1
+    return (
+        "Apply the system instructions to the following payload and return only the required JSON object. "
+        "Treat prompt_spec as the priority-ordered generation checklist assembled from Visual DNA; "
+        "do not ignore concrete fields that affect fidelity:\n"
+        + json.dumps(body, ensure_ascii=False, indent=1)
     )
 
 
@@ -137,13 +149,17 @@ async def generate_optimized_prompt(
     if aspect is not None:
         tokens = {"EXTRACT_ASPECT": aspect, "EXTRACT_GUIDANCE": _ASPECT_GUIDANCE[aspect]}
     system = _render(template_name, target, **tokens)
-    user = _user_payload(dna, resolved_intent, mode.value, target, instruction, None)
+    user = _user_payload(dna, resolved_intent, mode.value, target, instruction, None, mode)
 
     def _validate(text: str) -> tuple[str, str | None]:
         return _parse_prompt(extract_json_object(text))
 
     outcome = await executor.run_text(
-        system_prompt=system, user_prompt=user, validate=_validate, max_output_tokens=PROMPT_MAX_OUTPUT_TOKENS
+        system_prompt=system,
+        user_prompt=user,
+        validate=_validate,
+        max_output_tokens=PROMPT_MAX_OUTPUT_TOKENS,
+        temperature=PROMPT_TEMPERATURE,
     )
     prompt, negative = outcome.value
     return _finish(prompt, negative, target, dna)
@@ -176,6 +192,7 @@ async def generate_collage_prompts(
         target,
         instruction,
         None,
+        PromptMode.RECREATE,
         extra={
             "collage": {
                 "layout_description": collage.layout_description,
@@ -202,7 +219,11 @@ async def generate_collage_prompts(
         return master, parsed
 
     outcome = await executor.run_text(
-        system_prompt=system, user_prompt=user, validate=_validate, max_output_tokens=COLLAGE_MAX_OUTPUT_TOKENS
+        system_prompt=system,
+        user_prompt=user,
+        validate=_validate,
+        max_output_tokens=COLLAGE_MAX_OUTPUT_TOKENS,
+        temperature=PROMPT_TEMPERATURE,
     )
     master_direction, parsed_shots = outcome.value
     if not master_direction:
@@ -228,7 +249,7 @@ async def refine_optimized_prompt(
     """Surgical refinement: keep/change planning, then coherent reconstruction (spec Phase 10)."""
     resolved_intent = _with_intent(dna, intent)
     system = _render("modification", target)
-    user = _user_payload(dna, resolved_intent, "refine", target, instruction, current_prompt)
+    user = _user_payload(dna, resolved_intent, "refine", target, instruction, current_prompt, mode)
 
     def _validate(text: str) -> tuple[list[str], list[str], str, str | None]:
         payload = extract_json_object(text)
@@ -236,7 +257,11 @@ async def refine_optimized_prompt(
         return as_str_list(payload.get("keep")), as_str_list(payload.get("change")), prompt, negative
 
     outcome = await executor.run_text(
-        system_prompt=system, user_prompt=user, validate=_validate, max_output_tokens=PROMPT_MAX_OUTPUT_TOKENS
+        system_prompt=system,
+        user_prompt=user,
+        validate=_validate,
+        max_output_tokens=PROMPT_MAX_OUTPUT_TOKENS,
+        temperature=PROMPT_TEMPERATURE,
     )
     keep, change, prompt, negative = outcome.value
     final_prompt, final_negative, quality = _finish(prompt, negative, target, dna)

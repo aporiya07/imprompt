@@ -3,13 +3,16 @@ import re
 from app.models.dna import VisualDNA
 from app.prompting.adapters.base import PromptTarget
 
-GUIDANCE = """Target: Midjourney. Write dense, evocative, comma-separated visual phrases; Midjourney
-weights early words more strongly, so subject and composition come first. Do NOT mention camera
-brands or lens models. Do NOT write long typography instructions; Midjourney renders text poorly.
-End the prompt with Midjourney parameters: the aspect ratio parameter --ar W:H (derived from the
-Visual DNA's technical.aspect_ratio) is REQUIRED. A separate negative prompt is NOT supported:
-set negative_prompt to null; only if something is critical to exclude, append a --no item1, item2
-parameter to the prompt itself (at most 2 items). Keep the whole prompt under ~1500 characters."""
+GUIDANCE = """Target: Midjourney. Write dense, SPECIFIC, comma-separated visual phrases (not poetic
+mood fillers). Midjourney weights early words more strongly, so subject, wardrobe, composition and
+spatial relationships come first, then lighting, palette, materials and depth. Do NOT sacrifice
+concrete subject/environment/lighting detail for brevity or evocative adjectives. Do NOT mention
+camera brands or lens models. Do NOT write long typography instructions; Midjourney renders text
+poorly. End the prompt with Midjourney parameters: the aspect ratio parameter --ar W:H (derived
+from the Visual DNA's technical.aspect_ratio) is REQUIRED. A separate negative prompt is NOT
+supported: set negative_prompt to null; only if something is critical to exclude, append a
+--no item1, item2 parameter to the prompt itself (at most 2 items). Prefer staying under ~1500
+characters by compressing redundancy, not by deleting wardrobe, pose, lighting or palette."""
 
 _AR = re.compile(r"(\d+(?:\.\d+)?)\s*[:x/]\s*(\d+(?:\.\d+)?)")
 
@@ -38,7 +41,7 @@ midjourney_target = PromptTarget(
     supports_negative=False,
     soft_char_limit=1500,
     prompt_structure="dense comma-separated visual phrases, most important first",
-    instruction_style="evocative phrases; early words weighted more",
+    instruction_style="specific concrete phrases; early words weighted more",
     reference_image_language=(
         "Midjourney accepts image prompts by URL at the start of the prompt; the web UI also supports "
         "omni-reference for style/character. Do not assume the model can see our reference image unless "

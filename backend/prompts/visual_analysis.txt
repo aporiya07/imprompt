@@ -14,7 +14,32 @@ EVIDENCE RULES (apply to every field)
 3. CAMERA: never claim gear or exact numbers (no "85mm f/1.4", no brand names). Use appearance categories: "wide-angle appearance", "normal perspective", "short-telephoto appearance", "telephoto-like compression".
 4. TYPOGRAPHY: present=true ONLY if text/lettering is visibly rendered; copy exact text; never guess unreadable text.
 5. Describe illustration/render as illustration/render (realism_level), not as photography.
-6. Be information-dense; short phrases, no filler adjectives ("beautiful", "stunning").
+6. Be information-dense with concrete factual clauses. No filler adjectives ("beautiful", "stunning"). Prefer observable structure over mood language.
+7. Capture wardrobe construction, garment material, accessory details, body orientation, gaze, hand placement, subject placement, framing, negative space, depth layers, light direction/quality, color relationships, atmospheric behavior, and recurring motifs when visible.
+8. For collage/moodboard references: do NOT flatten panels into one scene. Capture recurring continuity (same subjects/wardrobe/palette/lighting family) AND per-panel shot variation (framing, pose, viewpoint, interaction, scale).
+
+DEDICATED HUMAN-STRUCTURE PASS
+Before writing the final JSON, inspect every visible person independently. Record only
+observable geometry, not a typical or emotionally implied pose:
+- body state, torso orientation, shoulder orientation, hip orientation, stance and weight distribution
+- head orientation separately from face orientation, face visibility, and head position
+- gaze direction separately from head direction, including a visible gaze target when determinable
+- position in frame, relative scale, depth position, and visible body regions
+- left/right arm and hand visibility, position, gesture, contact, held object, and relation to torso
+- leg and foot position only when visible; otherwise say not visible, cropped, or occluded
+- meaningful gestures, touch points, and what body parts are hidden or overlap
+Then perform a pairwise relationship pass. For every relevant pair record front/behind,
+left/right, relative depth and distance, facing relationship, gaze relationship, contact
+points, arm/hand interaction, overlap and occlusion, and leaning/orientation. Do not collapse
+this into “romantic pose” or “standing together.” Body orientation is not gaze; head direction
+is not eye direction; touch is not emotion. If a fact is ambiguous, use an explicit uncertainty
+or leave it empty. Never hallucinate hidden anatomy.
+
+PEOPLE CHECKLIST (internal verification; do not output the checklist)
+For every person: body state; torso/shoulders; head/face; gaze and target; frame position;
+depth; left/right arms and hands; legs/feet if visible; gesture; visible and occluded regions;
+interaction with others. For every pair: front/behind; left/right; scale; facing; gaze;
+contact; hand/arm interaction; overlap/occlusion; distance; leaning.
 
 visual_dna SCHEMA (keep every key; use "" / [] when unknown):
 {
@@ -23,7 +48,7 @@ visual_dna SCHEMA (keep every key; use "" / [] when unknown):
   "reference_type": "single_image | collage | moodboard | screenshot | photograph | illustration | advertisement | product_image | unknown",
   "reference_type_confidence": "high | medium | low",
   "layout_description": "e.g. 3x3 grid of nine photos; single frame; UI screenshot with two panels",
-  "overall_description": "2-3 sentence factual overview of what the image shows and how it is made",
+  "overall_description": "3-5 sentence factual overview covering subjects, wardrobe, environment, light, palette and compositional character",
   "analysis_confidence": 0.0
  },
  "subjects": [
@@ -31,19 +56,39 @@ visual_dna SCHEMA (keep every key; use "" / [] when unknown):
    "label": "subject_1",
    "type": "person | couple | group | animal | product | object | vehicle | building | food | other",
    "count": 1,
-   "description": "concrete visual description",
+   "description": "concrete visual description including identity cues that are visibly present",
    "age_category": "",
    "gender_presentation": "",
-   "clothing": "",
-   "accessories": [],
+   "clothing": "garment type, color, material, construction details when visible",
+   "accessories": ["jewelry, bangles, belts, bags when visible"],
    "pose": "",
    "body_orientation": "",
+   "body_pose": {
+    "state": "", "torso_orientation": "", "shoulder_orientation": "",
+    "head_orientation": "", "face_orientation": "", "hip_orientation": "",
+    "stance": "", "weight_distribution": "", "leg_position": "", "foot_position": "",
+    "confidence": "high | medium | low | uncertain"
+   },
    "facial_expression": "",
    "gaze_direction": "",
+   "gaze": {"direction": "", "target": "", "confidence": "high | medium | low | uncertain"},
+   "gaze_target": "",
+   "face_visibility": "",
+   "head_position": "",
+   "left_arm": {"visibility": "", "position": "", "gesture": "", "contact": "", "held_object": "", "relation_to_torso": "", "confidence": "high | medium | low | uncertain"},
+   "right_arm": {"visibility": "", "position": "", "gesture": "", "contact": "", "held_object": "", "relation_to_torso": "", "confidence": "high | medium | low | uncertain"},
+   "left_hand": {"visibility": "", "position": "", "gesture": "", "contact": "", "held_object": "", "relation_to_torso": "", "confidence": "high | medium | low | uncertain"},
+   "right_hand": {"visibility": "", "position": "", "gesture": "", "contact": "", "held_object": "", "relation_to_torso": "", "confidence": "high | medium | low | uncertain"},
+   "body_visibility": {
+    "visible_body_regions": [], "occluded_body_regions": [], "occlusion_notes": [],
+    "confidence": "high | medium | low | uncertain"
+   },
    "position_in_frame": "",
    "relative_scale": "",
+   "depth_position": "",
+   "contact_points": [],
    "distinguishing_characteristics": [],
-   "interactions": ["holding hands with subject_2"],
+   "interactions": ["holding hands with subject_2", "arm around waist"],
    "confidence": "high"
   }
  ],
@@ -99,7 +144,7 @@ visual_dna SCHEMA (keep every key; use "" / [] when unknown):
   "hierarchy": "", "layout": "", "graphics": ["logos, badges, graphic elements if visible"], "confidence": "high"
  },
  "relationships": [
-  {"subject": "subject_1", "relation": "facing | behind | beside | holding | occluded by | lit from behind | framed by | ...", "object": "subject_2 | the window | ...", "description": ""}
+  {"subject": "subject_1", "relation": "facing | behind | beside | holding | occluded by | lit from behind | framed by | ...", "object": "subject_2 | the window | ...", "description": "", "depth_order": "", "distance": "", "contact_points": [], "occlusion": "", "confidence": "high | medium | low | uncertain"}
  ],
  "elements": [
   {"description": "golden-hour backlight", "importance": "essential | supporting | incidental | uncertain", "reason": "why"}
@@ -132,7 +177,7 @@ collage_analysis SCHEMA: include ONLY when reference_type is collage, moodboard,
   {
    "index": 1,
    "title": "close-up portrait",
-   "summary": "one sentence: what this panel shows",
+   "summary": "1-2 dense factual sentences: subjects, wardrobe cues, interaction, framing, environment emphasis",
    "bounds": {"x": 0.0, "y": 0.0, "w": 0.33, "h": 0.33},
    "shot": {"shot_type": "", "pose": "", "composition": "", "lighting": "", "palette": "", "style": "", "wardrobe": "", "environment": "", "notes": ""},
    "confidence": "medium"
@@ -143,9 +188,9 @@ collage_analysis SCHEMA: include ONLY when reference_type is collage, moodboard,
   "lighting": "the RECURRING lighting across panels", "mood": "",
   "photography_style": "", "wardrobe_direction": "", "environment": "",
   "recurring_motifs": [], "composition_patterns": [],
-  "summary": "the shared creative language in 2-3 sentences"
+  "summary": "3-5 dense sentences on the shared creative language: subjects, wardrobe continuity, palette, lighting family, environment, photographic language, and shot-variation patterns"
  }
 }
-Rules for collage_analysis: identify each panel separately (count them!), find what RECURS across panels (lighting, palette, wardrobe, mood, poses), and describe the global language without averaging contradictions. Do not invent panel content you cannot see; leave uncertain panels with summary "".
+Rules for collage_analysis: identify each panel separately (count them!), find what RECURS across panels (subjects, wardrobe, lighting, palette, mood, environment) AND how panels vary (framing, pose, viewpoint, interaction, scale). Describe the global language without averaging contradictions. Do not invent panel content you cannot see; leave uncertain panels with summary "".
 
 The user message contains the image. Respond with the JSON object only.

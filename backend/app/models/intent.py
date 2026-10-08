@@ -91,6 +91,21 @@ def derive_intent_from_dna(dna: VisualDNA) -> CreativeIntent:
         preserve.append(
             " ".join(x for x in (dna.composition.shot_type, dna.composition.balance) if x)
         )
+    for rel in dna.relationships[:4]:
+        if rel.description:
+            preserve.append(rel.description)
+    for material in dna.materials[:4]:
+        label = " ".join(
+            part for part in (getattr(material, "material", ""), getattr(material, "object", "")) if part
+        ).strip()
+        if label:
+            preserve.append(label)
+    for swatch in (dna.color.dominant or [])[:3]:
+        if swatch.name:
+            preserve.append(swatch.name)
+    for subject in dna.subjects[:2]:
+        if subject.clothing:
+            preserve.append(subject.clothing)
 
     return CreativeIntent(
         primary_goal=primary_goal,

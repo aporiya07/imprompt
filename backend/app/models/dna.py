@@ -37,6 +37,49 @@ class ReferenceMeta(BaseModel):
 
 # ---------- subjects ----------
 
+class BodyPoseRecord(BaseModel):
+    """Observable body configuration; empty means the region was not determinable."""
+
+    model_config = _FLEX
+    state: str = ""  # standing / sitting / walking / leaning / ...
+    torso_orientation: str = ""
+    shoulder_orientation: str = ""
+    head_orientation: str = ""
+    face_orientation: str = ""
+    hip_orientation: str = ""
+    stance: str = ""
+    weight_distribution: str = ""
+    leg_position: str = ""
+    foot_position: str = ""
+    confidence: ConfidenceLevel = ConfidenceLevel.MEDIUM
+
+
+class GazeRecord(BaseModel):
+    model_config = _FLEX
+    direction: str = ""
+    target: str = ""
+    confidence: ConfidenceLevel = ConfidenceLevel.MEDIUM
+
+
+class LimbRecord(BaseModel):
+    model_config = _FLEX
+    visibility: str = ""  # visible / partially visible / occluded / outside frame / uncertain
+    position: str = ""
+    gesture: str = ""
+    contact: str = ""
+    held_object: str = ""
+    relation_to_torso: str = ""
+    confidence: ConfidenceLevel = ConfidenceLevel.MEDIUM
+
+
+class BodyVisibilityRecord(BaseModel):
+    model_config = _FLEX
+    visible_body_regions: list[str] = Field(default_factory=list)
+    occluded_body_regions: list[str] = Field(default_factory=list)
+    occlusion_notes: list[str] = Field(default_factory=list)
+    confidence: ConfidenceLevel = ConfidenceLevel.MEDIUM
+
+
 class SubjectRecord(BaseModel):
     model_config = _FLEX
     label: str = ""  # stable handle, e.g. "subject_1"
@@ -49,10 +92,22 @@ class SubjectRecord(BaseModel):
     accessories: list[str] = Field(default_factory=list)
     pose: str = ""
     body_orientation: str = ""
+    body_pose: BodyPoseRecord = Field(default_factory=BodyPoseRecord)
+    gaze: GazeRecord = Field(default_factory=GazeRecord)
     facial_expression: str = ""
     gaze_direction: str = ""
+    gaze_target: str = ""
+    face_visibility: str = ""
+    head_position: str = ""
+    left_arm: LimbRecord = Field(default_factory=LimbRecord)
+    right_arm: LimbRecord = Field(default_factory=LimbRecord)
+    left_hand: LimbRecord = Field(default_factory=LimbRecord)
+    right_hand: LimbRecord = Field(default_factory=LimbRecord)
+    body_visibility: BodyVisibilityRecord = Field(default_factory=BodyVisibilityRecord)
     position_in_frame: str = ""
     relative_scale: str = ""
+    depth_position: str = ""
+    contact_points: list[str] = Field(default_factory=list)
     distinguishing_characteristics: list[str] = Field(default_factory=list)
     interactions: list[str] = Field(default_factory=list)
     confidence: ConfidenceLevel = ConfidenceLevel.MEDIUM
@@ -228,6 +283,11 @@ class RelationshipRecord(BaseModel):
     relation: str = ""  # facing / behind / holding / beside / occluded by / lit from behind ...
     object: str = ""
     description: str = ""
+    depth_order: str = ""
+    distance: str = ""
+    contact_points: list[str] = Field(default_factory=list)
+    occlusion: str = ""
+    confidence: ConfidenceLevel = ConfidenceLevel.MEDIUM
 
 
 # ---------- essential vs incidental ----------
@@ -319,6 +379,26 @@ def _section(value: Any) -> dict[str, Any]:
     return out
 
 
+def _structured_section(value: Any, fields: tuple[str, ...]) -> dict[str, Any]:
+    """Normalize a nested observation without stringifying its fields."""
+    if not isinstance(value, dict):
+        return {}
+    out = {field: as_str(value.get(field)) for field in fields}
+    out["confidence"] = _confidence(value.get("confidence")).value
+    return out
+
+
+def _body_visibility(value: Any) -> dict[str, Any]:
+    if not isinstance(value, dict):
+        return {}
+    return {
+        "visible_body_regions": as_str_list(value.get("visible_body_regions"), split_commas=False),
+        "occluded_body_regions": as_str_list(value.get("occluded_body_regions"), split_commas=False),
+        "occlusion_notes": as_str_list(value.get("occlusion_notes"), split_commas=False),
+        "confidence": _confidence(value.get("confidence")).value,
+    }
+
+
 def _swatch(value: Any) -> Swatch | None:
     if isinstance(value, dict):
         name = as_str(value.get("name") or value.get("color"))
@@ -396,6 +476,29 @@ def normalize_dna_payload(raw: Any) -> dict[str, Any]:
         s["accessories"] = as_str_list(item.get("accessories"))
         s["distinguishing_characteristics"] = as_str_list(item.get("distinguishing_characteristics"), split_commas=False)
         s["interactions"] = as_str_list(item.get("interactions"), split_commas=False)
+        s["body_pose"] = _structured_section(
+            item.get("body_pose"),
+            (
+                "state",
+                "torso_orientation",
+                "shoulder_orientation",
+                "head_orientation",
+                "face_orientation",
+                "hip_orientation",
+                "stance",
+                "weight_distribution",
+                "leg_position",
+                "foot_position",
+            ),
+        )
+        s["gaze"] = _structured_section(item.get("gaze"), ("direction", "target"))
+        for limb in ("left_arm", "right_arm", "left_hand", "right_hand"):
+            s[limb] = _structured_section(
+                item.get(limb),
+                ("visibility", "position", "gesture", "contact", "held_object", "relation_to_torso"),
+            )
+        s["body_visibility"] = _body_visibility(item.get("body_visibility"))
+        s["contact_points"] = as_str_list(item.get("contact_points"), split_commas=False)
         subjects.append(s)
     out["subjects"] = subjects
 
@@ -478,7 +581,10 @@ def normalize_dna_payload(raw: Any) -> dict[str, Any]:
     relationships: list[dict[str, Any]] = []
     for item in rel_raw:
         if isinstance(item, dict):
-            relationships.append(_section(item))
+            relationship = _section(item)
+            relationship["contact_points"] = as_str_list(item.get("contact_points"), split_commas=False)
+            relationship["confidence"] = _confidence(item.get("confidence")).value
+            relationships.append(relationship)
         elif as_str(item):
             relationships.append({"description": as_str(item)})
     out["relationships"] = relationships

@@ -119,6 +119,10 @@ export interface PromptQuality {
   score: number;
   warnings: string[];
   strengths: string[];
+  /** 0..100 when the backend computed Visual DNA coverage */
+  visual_coverage_score?: number | null;
+  /** Per-category coverage hits among categories expected from Visual DNA */
+  coverage?: Record<string, boolean> | null;
   [k: string]: unknown;
 }
 

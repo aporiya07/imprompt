@@ -12,6 +12,54 @@ class TestNormalizeDNAv2:
         assert out["subjects"][0]["label"] == "subject_1"
         assert out["subjects"][0]["description"] == "a woman"
 
+    def test_structured_human_pose_is_preserved(self):
+        out = normalize_dna_payload(
+            {
+                "subjects": [
+                    {
+                        "label": "subject_1",
+                        "type": "person",
+                        "body_pose": {
+                            "state": "standing",
+                            "torso_orientation": "three-quarter toward camera",
+                            "head_orientation": "turned toward subject_2",
+                            "confidence": "high",
+                        },
+                        "gaze": {"direction": "downward", "target": "subject_2"},
+                        "left_hand": {
+                            "visibility": "visible",
+                            "position": "resting on subject_2's forearm",
+                            "contact": "hand contact",
+                        },
+                        "body_visibility": {
+                            "visible_body_regions": ["head", "torso", "left hand"],
+                            "occluded_body_regions": ["feet"],
+                        },
+                    }
+                ],
+                "relationships": [
+                    {
+                        "subject": "subject_1",
+                        "relation": "in front of",
+                        "object": "subject_2",
+                        "depth_order": "foreground",
+                        "occlusion": "subject_2 partly occluded",
+                        "contact_points": ["left hand to forearm"],
+                    }
+                ],
+            }
+        )
+        subject = out["subjects"][0]
+        assert subject["body_pose"]["torso_orientation"] == "three-quarter toward camera"
+        assert subject["gaze"]["target"] == "subject_2"
+        assert subject["left_hand"]["contact"] == "hand contact"
+        assert subject["body_visibility"]["occluded_body_regions"] == ["feet"]
+        assert out["relationships"][0]["depth_order"] == "foreground"
+
+        dna = VisualDNA.model_validate(out)
+        assert dna.subjects[0].body_pose.head_orientation == "turned toward subject_2"
+        assert dna.relationships[0].contact_points == ["left hand to forearm"]
+
     def test_subject_from_plain_string(self):
         out = normalize_dna_payload({"subjects": "a red sphere"})
         assert out["subjects"] == [{"label": "subject_1", "description": "a red sphere", "type": "unknown"}]

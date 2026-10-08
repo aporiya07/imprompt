@@ -3,7 +3,14 @@ import type { PromptQuality } from "../types";
 import { CardHead } from "./ui";
 
 export default function QualityCard({ quality }: { quality: PromptQuality | null }) {
-  if (!quality || (quality.warnings.length === 0 && quality.strengths.length === 0)) return null;
+  if (
+    !quality ||
+    (quality.warnings.length === 0 &&
+      quality.strengths.length === 0 &&
+      quality.visual_coverage_score == null)
+  ) {
+    return null;
+  }
   const tone = quality.score >= 85 ? "good" : quality.score >= 60 ? "ok" : "poor";
   return (
     <section className="card quality-card">
@@ -14,6 +21,11 @@ export default function QualityCard({ quality }: { quality: PromptQuality | null
           <span className="quality-bar-fill" style={{ width: `${quality.score}%` }} />
         </span>
       </div>
+      {typeof quality.visual_coverage_score === "number" && (
+        <p className="quality-coverage">
+          Visual coverage {quality.visual_coverage_score}
+        </p>
+      )}
       {quality.warnings.length > 0 && (
         <ul className="quality-list warnings">
           {quality.warnings.map((w, i) => (

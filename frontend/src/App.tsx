@@ -17,7 +17,7 @@ import { useAnalysis } from "./hooks/useAnalysis";
 import { api, DEFAULT_MODELS } from "./services/api";
 import type { HistoryItem, Mode, PromptVersion, TargetModel, UploadedImage } from "./types";
 import { MODE_LABELS } from "./types";
-import { APP_VERSION } from "./version";
+import { APP_VERSION } from "./version.ts";
 import { safeFilenameFromUrl } from "./utils/filename";
 import { clearHistory, deleteHistoryItem, loadHistory } from "./utils/history";
 import { loadImageFile } from "./utils/image";

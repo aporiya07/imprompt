@@ -1,109 +1,276 @@
 # ImPrompt
 
-**Image to Prompt AI**: visual reverse engineering.
+**Image-to-prompt visual reverse engineering.**
 
-Upload a reference image (file or any public image URL) → **visual reverse engineering** → a structured **Visual DNA** (subjects, composition, camera, lighting, color, materials, typography, spatial relationships, essential-vs-incidental elements, explicit uncertainty) → a **Creative Intent** strategy layer → a **generation-ready prompt** engineered for your target model, with a deterministic **quality score**, negative prompt where supported, surgical **refinement**, version history, and **moodboard/collage support**: a 3×3 Pinterest board becomes a master creative direction plus per-shot prompts.
+ImPrompt turns a reference image into a structured visual representation and then into a generation-ready prompt for a selected image model. It preserves the visual facts that affect reconstruction: subjects, human geometry, relationships, composition, lighting, color, materials, environment, uncertainty, and—when the input is a moodboard—panel variation and series continuity.
 
-This is not captioning. The system answers *"What makes this image look like this?"*, not *"What is in this image?"*
+This is not image captioning. Captioning asks *“What is visible?”* ImPrompt asks *“What visual information needs to survive so another model can reproduce the result?”*
 
-## Pipeline
+## At a glance
 
-```
-Reference Image (upload / URL, SSRF-guarded fetch)
-  → Image Preprocessing (magic-byte validation, size cap, ≤2048px JPEG)
-  → Vision Analysis (Gemini, ONE call → Visual DNA + CreativeIntent + CollageAnalysis)
-  → Validation / Normalization (typed Pydantic models, tolerant to omissions)
-      [analysis cached by image hash; retries never re-pay the vision call]
-  → Prompt Construction (OpenAI, mode template + intent)
-  → Deterministic Prompt Validator (score / warnings / strengths)
-  → Model Adapter (Gemini/Nano Banana · GPT Image · FLUX · Midjourney · Stable Diffusion · Generic)
-  → Final Prompt (+ negative prompt where the model supports one)
-```
+```mermaid
+flowchart LR
+    A["Reference image"] --> B["Preprocess and validate"]
+    B --> C["Vision analysis"]
+    C --> D["Visual DNA"]
+    C --> E["Creative Intent"]
+    D --> F["PromptSpec"]
+    E --> F
+    F --> G["Target adapter"]
+    G --> H["Deterministic diagnostics"]
+    H --> I["Generation-ready prompt"]
 
-Reference intents: **Recreate · Create Similar · Extract Style · Extract Composition · Extract Lighting · Extract Color · Extract Pose · Modify**. Collages/moodboards are detected as such and never treated as one photographic scene.
-
-## Project structure
-
-```
-backend/
-  app/
-    main.py                  # FastAPI app; strict {success,data,error} envelopes; static UI serving
-    config.py                # pydantic-settings (backend/.env)
-    api/
-      routes_analysis.py     # POST /api/analyze, /api/fetch-image
-      routes_prompt.py       # generate/refine/validate-prompt, /api/models, /api/health
-    providers/               # AIProvider ABC; gemini/openai wrappers; registry with retry+fallback
-    analysis/visual_dna.py   # vision stage → typed artifacts (cached)
-    prompting/
-      optimizer.py           # mode templates, collage shot generation, refinement
-      diagnostics.py         # deterministic prompt quality heuristics
-      adapters/              # 6 targets with structured capability metadata
-    models/                  # common | dna (v2) | intent | collage | quality | contracts
-    services/                # cache (TTL), observability (per-stage logging)
-    utils/                   # image validation, JSON repair, SSRF-guarded URL fetch, errors
-    prompts/                 # EDITABLE templates
-  tests/                     # hermetic tests + optional live tier (RUN_LIVE_TESTS=1)
-frontend/                    # React + TS + Vite
+    classDef source fill:#f4efe8,stroke:#6b6258,color:#28231f
+    classDef analysis fill:#e8f0f2,stroke:#42636b,color:#1f3034
+    classDef prompt fill:#f0e9f7,stroke:#725789,color:#30243a
+    classDef output fill:#e8f1e7,stroke:#557653,color:#253724
+    class A,B source
+    class C,D,E analysis
+    class F,G,H prompt
+    class I output
 ```
 
-## Setup
+Detailed diagrams:
 
-Requires Python 3.12+ (uv) and Node 18+.
+- [Core pipeline](docs/diagrams/core-pipeline.md)
+- [Human and multi-person analysis](docs/diagrams/human-analysis.md)
+- [Collage and moodboard analysis](docs/diagrams/collage-analysis.md)
+- [Prompt construction and adapters](docs/diagrams/prompt-construction.md)
+- [System architecture](docs/diagrams/system-architecture.md)
 
-```bash
-cd backend && uv sync && cp .env.example .env   # fill in GEMINI_API_KEY / OPENAI_API_KEY
-cd ../frontend && npm install
+## What the pipeline does
+
+1. **Preprocesses the reference.** Uploaded data is checked using image signatures, decoded pixel limits, byte limits, EXIF orientation, transparency handling, and normalized JPEG output. Public URLs go through scheme, DNS/IP, redirect, content-type, streaming-size, and image validation.
+2. **Runs vision analysis.** One vision call returns Visual DNA, Creative Intent input, and optional collage analysis. The response is parsed and validated inside the provider retry boundary.
+3. **Builds typed artifacts.** Pydantic models normalize omissions and preserve explicit uncertainty instead of filling gaps with invented facts.
+4. **Constructs a prompt.** `PromptSpec` combines Visual DNA and Creative Intent with an editable mode template, prioritizing visual constraints over decorative adjectives.
+5. **Adapts to the target.** A `PromptTarget` supplies model-specific guidance, syntax, limits, negative-prompt behavior, and deterministic post-processing.
+6. **Scores the result.** Diagnostics run without another AI call. They check filler, unsupported camera claims, repetition, contradictions, model suitability, and visual coverage—including human-pose coverage.
+
+Supported modes are `recreate`, `create_similar`, `extract_style`, `extract_composition`, `extract_lighting`, `extract_color`, `extract_pose`, and `modify`.
+
+## Visual DNA
+
+Visual DNA is the observation layer between an image and a prompt. It currently contains:
+
+- **Subjects:** appearance, clothing, accessories, distinguishing characteristics, pose, frame position, scale, depth, and confidence.
+- **Human geometry:** body state; torso, shoulder, hip, head, and face orientation; stance; weight distribution; leg and foot position when visible; gaze direction and target; left/right arm and hand placement; gestures; contact; visible and occluded body regions.
+- **Relationships:** explicit subject-to-subject relations such as front/behind, facing, holding, touching, depth order, distance, contact points, and occlusion.
+- **Scene structure:** foreground, midground, background, location, atmosphere, composition, framing, negative space, perspective, and depth.
+- **Rendering characteristics:** camera appearance categories, lighting direction and quality, fill/rim behavior, palette and grading, materials, style, mood, typography, and essential/supporting/incidental elements.
+- **Evidence state:** section confidence, element importance, uncertainty notes, and observed-versus-interpreted separation.
+
+The human fields are deliberately separate. Body orientation is not gaze; head direction is not eye direction; touch is not emotion. Cropped or hidden anatomy remains unavailable rather than being guessed.
+
+## Human and multi-person analysis
+
+For each visible person, the vision prompt performs an individual structure pass before a pairwise relationship pass. That makes a distinction such as this representable:
+
+> The woman occupies the foreground with her torso three-quarter toward the camera and her head turned toward the man. The man is behind her, his arm around her waist; her hand rests over his forearm. Their bodies overlap and the lower body is not visible.
+
+The wording is generated from observations, not from a fixed couple template. If a hand, foot, or gaze is hidden or ambiguous, the analysis can record it as occluded, cropped, not visible, or uncertain.
+
+See the [human analysis workflow](docs/diagrams/human-analysis.md).
+
+## Moodboards and collages
+
+Structural references are not flattened into one scene. Vision analysis can produce:
+
+- `PanelRecord` entries with index, title, bounds, summary, and a `ShotRecord`
+- `GlobalCreativeDNA` for recurring palette, lighting, wardrobe, environment, style, motifs, and composition patterns
+- a master creative direction for the shared series
+- one complete, shot-specific prompt per usable panel
+
+Continuity belongs in the master direction: same subjects, wardrobe family, location family, palette, lighting language, and editorial tone. Variation belongs in each shot: framing, pose, gaze, orientation, interaction, viewpoint, scale, and environment emphasis.
+
+## Prompt construction and adapters
+
+The universal representation is kept separate from model syntax:
+
+```mermaid
+flowchart LR
+    A["Visual DNA"] --> C["PromptSpec"]
+    B["Creative Intent"] --> C
+    C --> D["Mode template"]
+    E["PromptTarget metadata"] --> D
+    D --> F["Provider role executor"]
+    F --> G["Adapter post-processing"]
+    G --> H["Diagnostics"]
+    H --> I["Final prompt"]
 ```
 
-Model defaults (env-overridable; see `backend/.env.example` and `backend/app/config.py`):
-vision `gemini-3.8-flash`, prompt `gpt-6-luna`, with fallbacks configured in the provider registry.
+The registry currently exposes these target adapters:
 
-## Run
+| Target | Prompt style | Negative prompt | Special handling |
+|---|---|---|---|
+| Generic | Natural-language paragraph | Supported | No model-specific assumptions |
+| Gemini (Nano Banana) | Conversational, literal prose | Not separate | Supports reference-relative image editing language |
+| GPT Image (OpenAI) | Detailed literal prose | Not separate | Supports reference-relative editing language |
+| FLUX | Flowing descriptive prose | Supported by many UIs | No parameter flags or quality-word spam |
+| Midjourney | Dense comma-separated phrases | Inline `--no` only | Appends `--ar` from analyzed aspect ratio |
+| Stable Diffusion | Ordered comma-separated tags | Supported and expected | Optional sparse emphasis syntax |
 
-```bash
-cd backend  && uv run uvicorn app.main:app --reload --port 8000   # also serves frontend/dist if built
-cd frontend && npm run dev                                        # http://localhost:5173 (proxies /api)
-```
+These are prompt adapters, not image-generation integrations. The backend currently wraps Gemini and OpenAI as AI providers for vision and text stages; target adapters describe the output format requested from those stages.
 
-Port 8000 busy? Use `--port 8010` and set `VITE_DEV_PROXY_TARGET=http://localhost:8010` in `frontend/.env` (see `frontend/.env.example`).
+## System architecture
 
-## API
+The repository-level architecture is documented in the [system architecture diagram](docs/diagrams/system-architecture.md). The application is a local, single-process system: there is no database, queue, or distributed worker layer.
 
-All responses use strict envelopes: `{"success", "data", "error"}`; errors carry `request_id`.
+## Quick start
 
-| Endpoint | Body → data |
-|---|---|
-| `POST /api/analyze` | `{image, mode, target_model?, instruction?, generate_prompt?}` → DNA, intent, prompt, quality, shots, panels |
-| `POST /api/generate-prompt` | `{visual_dna, creative_intent?, mode, target_model, instruction?}` → `{prompt, negative_prompt?, quality?}` |
-| `POST /api/refine-prompt` | `{visual_dna, creative_intent?, current_prompt, instruction, mode, target_model}` → refined prompt |
-| `POST /api/validate-prompt` | `{prompt, target_model, visual_dna?}` → `{quality}` (no AI calls) |
-| `POST /api/fetch-image` | `{url}` → `{image, width, height}` (SSRF-guarded) |
-| `GET /api/models` | target models incl. `supports_negative`, `soft_char_limit` |
-| `GET /api/health` | provider config status |
-
-## Verification
+Requirements: Python 3.12+, [uv](https://docs.astral.sh/uv/), and Node.js 18+.
 
 ```bash
 cd backend
-uv run pytest tests                              # hermetic tests (mocked providers, no cost)
-uv run ruff check app tests
-RUN_LIVE_TESTS=1 uv run pytest tests/test_live.py  # optional live tier
+uv sync
+cp .env.example .env
+# Set GEMINI_API_KEY and OPENAI_API_KEY in backend/.env as needed.
 
 cd ../frontend
+npm install
+```
+
+Start the backend in one terminal:
+
+```bash
+cd backend
+uv run uvicorn app.main:app --reload --port 8000
+```
+
+Start the Vite frontend in another:
+
+```bash
+cd frontend
+npm run dev
+```
+
+The frontend runs at `http://localhost:5173` and proxies `/api` to `http://localhost:8000`. The backend also serves `frontend/dist` when that directory exists. To use another backend port, set `VITE_DEV_PROXY_TARGET` in `frontend/.env`; see [`frontend/.env.example`](frontend/.env.example).
+
+Provider selection, model names, fallback behavior, image limits, CORS, and timeouts are configured in [`backend/app/config.py`](backend/app/config.py) and [`backend/.env.example`](backend/.env.example).
+
+## API
+
+Every response uses the envelope `{"success": ..., "data": ..., "error": ...}`. Errors include a request ID.
+
+### Analysis and media
+
+| Method | Route | Purpose |
+|---|---|---|
+| `POST` | `/api/analyze` | Validate an image, run visual analysis, and optionally generate a prompt |
+| `POST` | `/api/fetch-image` | Fetch and normalize a public reference image URL with SSRF protections |
+
+### Prompting and diagnostics
+
+| Method | Route | Purpose |
+|---|---|---|
+| `POST` | `/api/generate-prompt` | Generate a prompt from submitted Visual DNA and optional Creative Intent |
+| `POST` | `/api/refine-prompt` | Reconstruct a complete prompt while applying a surgical instruction |
+| `POST` | `/api/validate-prompt` | Run deterministic quality and coverage diagnostics; no AI call |
+
+### System
+
+| Method | Route | Purpose |
+|---|---|---|
+| `GET` | `/api/models` | List registered target adapters and their capabilities |
+| `GET` | `/api/health` | Report version, configured/available providers, and fallback status |
+
+Route implementations live in [`backend/app/api/`](backend/app/api/).
+
+## Project structure
+
+```text
+backend/
+  app/
+    api/                 FastAPI routes and request orchestration
+    analysis/            Image-to-artifact vision stage and cache keying
+    models/              Visual DNA, intent, collage, quality, and API contracts
+    prompting/           PromptSpec, optimizer, diagnostics, and adapters
+    providers/           Gemini/OpenAI wrappers and retry/fallback executor
+    services/            TTL cache and stage/request observability
+    utils/               Image normalization, URL fetching, JSON utilities, errors
+    prompts/             Editable vision and prompt-generation templates
+  tests/                 Hermetic backend tests and optional live tests
+frontend/
+  src/
+    components/          Reference, DNA, prompt, quality, history, and shot UI
+    hooks/               Analysis state and API workflow
+    services/            HTTP API and frontend error handling
+    utils/               History, image, filename, sanitization, and theme helpers
+docs/
+  diagrams/              Source-controlled Mermaid documentation diagrams
+```
+
+## Reliability and security boundaries
+
+Implemented safeguards include:
+
+- image magic-byte and decoded-format validation
+- compressed-byte, decoded-pixel, and normalized-side limits
+- EXIF orientation and transparent-image normalization
+- public HTTP(S)-only URL fetching with DNS/IP checks and redirect validation
+- streamed URL downloads with content-length and byte-budget checks
+- typed response validation inside provider retry/fallback boundaries
+- deterministic primary/fallback attempt budgets
+- versioned in-process TTL analysis cache and concurrent in-flight deduplication
+- strict API envelopes, bounded request payloads, and request IDs
+- deterministic prompt diagnostics, including unsupported technical camera claims
+
+The service has no authentication or rate limiting and is intended as a localhost tool. URL fetching still has a documented DNS-rebinding TOCTOU window, and the cache is process-local.
+
+## Testing and verification
+
+Backend hermetic tests use mocked providers and do not require API credits:
+
+```bash
+cd backend
+uv run pytest tests
+uv run ruff check app tests
+```
+
+Optional provider-backed tests:
+
+```bash
+cd backend
+RUN_LIVE_TESTS=1 uv run pytest tests/test_live.py
+```
+
+Frontend checks:
+
+```bash
+cd frontend
 npm run lint
 npm run typecheck
 npm test
 npm run build
 ```
 
-## Known limitations
+The same backend and frontend checks run in [GitHub Actions](.github/workflows/ci.yml).
 
-- Prompt-quality heuristics are deterministic patterns, not semantic understanding.
-- URL fetch has a known DNS-rebinding TOCTOU window; fine for localhost, revisit before exposing the API.
-- Analysis cache single-flight is in-process only (multi-worker needs distributed locking).
-- No database: history lives in `localStorage`; analysis cache is in-process TTL.
-- No auth/rate limiting: localhost tool.
+## Design principles
 
-## Version
+- Observe before interpreting.
+- Preserve structured visual facts and uncertainty.
+- Keep human geometry separate from mood.
+- Keep collage-wide continuity separate from shot-specific variation.
+- Build one model-independent PromptSpec, then adapt it to the target.
+- Prefer information density over decorative verbosity.
+- Never invent unsupported camera metadata or hidden anatomy.
+- Keep diagnostics deterministic and explainable.
 
-ImPrompt **v0.3.0** (see `backend/app/version.py` and `frontend/package.json`).
+## Roadmap
+
+### Current
+
+The repository contains the complete image-to-prompt flow, typed Visual DNA, human and relationship analysis, collage handling, target adapters, deterministic diagnostics, refinement, caching, provider fallback, and local React UI.
+
+### Next
+
+The most valuable engineering follow-ups are broader real-image evaluation fixtures for human geometry and richer diagnostics for panel-level master directions.
+
+### Future deployment work
+
+If ImPrompt is exposed beyond localhost, authentication, rate limiting, distributed cache coordination, and a stronger URL-fetch transport boundary should be added before treating it as a public service.
+
+## License
+
+No license file is currently present in the repository. Add an explicit license before distributing ImPrompt as an open-source package.

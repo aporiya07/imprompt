@@ -25,7 +25,7 @@ from app.utils.image import aspect_ratio_label, orientation_label
 from app.utils.json_utils import extract_json_object
 
 # Bump when prompts/visual_analysis.txt or DNA normalization changes behavior.
-VISION_PROMPT_VERSION = "4"
+VISION_PROMPT_VERSION = "6"
 VISION_MAX_OUTPUT_TOKENS = 8192
 
 _inflight: dict[str, asyncio.Future] = {}
