@@ -65,12 +65,14 @@ async function post<T extends Record<string, unknown>>(
     data?: unknown;
     error?: { code?: string; message?: string; request_id?: string };
   };
-  let envelope: EnvelopeBody | null = null;
-  try {
-    envelope = rawText ? (JSON.parse(rawText) as EnvelopeBody) : null;
-  } catch {
-    envelope = null;
-  }
+  const envelope: EnvelopeBody | null = (() => {
+    if (!rawText) return null;
+    try {
+      return JSON.parse(rawText) as EnvelopeBody;
+    } catch {
+      return null;
+    }
+  })();
   if (!res.ok || !envelope || envelope.success !== true) {
     const err = envelope?.error;
     // Non-JSON 500s usually mean the Vite proxy could not reach the API, or the
