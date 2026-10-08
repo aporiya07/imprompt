@@ -2,19 +2,19 @@
 
 Inputs are always typed artifacts — Visual DNA + CreativeIntent (+ CollageAnalysis
 for moodboards) + the user's instruction — rendered through editable templates and
-finished by the target-model adapter. Outputs are parsed, post-processed, and
-validated by the deterministic diagnostics before leaving the backend.
+finished by the target-model adapter. Provider output is parsed and validated
+inside the executor boundary (retry/fallback applies to malformed output), then
+post-processed and scored by the deterministic diagnostics.
 """
 import json
 import logging
-from typing import Any
 
 from app.models.collage import CollageAnalysis
 from app.models.common import PromptMode
+from app.models.contracts import ShotResult
 from app.models.dna import VisualDNA
 from app.models.intent import CreativeIntent, derive_intent_from_dna
 from app.models.quality import PromptQuality
-from app.models.contracts import ShotResult
 from app.prompting.adapters.base import PromptTarget
 from app.prompting.diagnostics import validate_prompt
 from app.prompts.loader import load_template
@@ -22,7 +22,10 @@ from app.providers.registry import RoleExecutor
 from app.utils.errors import MalformedAIResponseError
 from app.utils.json_utils import as_str, as_str_list, extract_json_object
 
-log = logging.getLogger("ipa.optimizer")
+log = logging.getLogger("imprompt.optimizer")
+
+PROMPT_MAX_OUTPUT_TOKENS = 4096
+COLLAGE_MAX_OUTPUT_TOKENS = 8192
 
 # mode → (template name, extraction aspect or None)
 _TEMPLATE_BY_MODE: dict[PromptMode, tuple[str, str | None]] = {
@@ -78,9 +81,9 @@ def _user_payload(
     target: PromptTarget,
     instruction: str | None,
     current_prompt: str | None,
-    extra: dict[str, Any] | None = None,
+    extra: dict | None = None,
 ) -> str:
-    body: dict[str, Any] = {
+    body: dict = {
         "task": task,
         "target_model": {"id": target.id, "name": target.name},
         "visual_dna": json.loads(dna.model_dump_json()),
@@ -106,7 +109,9 @@ def _parse_prompt(payload: dict) -> tuple[str, str | None]:
     return prompt, negative
 
 
-def _finish(prompt: str, negative: str | None, target: PromptTarget, dna: VisualDNA) -> tuple[str, str | None, PromptQuality]:
+def _finish(
+    prompt: str, negative: str | None, target: PromptTarget, dna: VisualDNA
+) -> tuple[str, str | None, PromptQuality]:
     final_prompt = target.post_process(prompt, dna)
     if not target.supports_negative:
         negative = None
@@ -133,8 +138,14 @@ async def generate_optimized_prompt(
         tokens = {"EXTRACT_ASPECT": aspect, "EXTRACT_GUIDANCE": _ASPECT_GUIDANCE[aspect]}
     system = _render(template_name, target, **tokens)
     user = _user_payload(dna, resolved_intent, mode.value, target, instruction, None)
-    text, _provider, _model = await executor.run_text(system_prompt=system, user_prompt=user)
-    prompt, negative = _parse_prompt(extract_json_object(text))
+
+    def _validate(text: str) -> tuple[str, str | None]:
+        return _parse_prompt(extract_json_object(text))
+
+    outcome = await executor.run_text(
+        system_prompt=system, user_prompt=user, validate=_validate, max_output_tokens=PROMPT_MAX_OUTPUT_TOKENS
+    )
+    prompt, negative = outcome.value
     return _finish(prompt, negative, target, dna)
 
 
@@ -173,31 +184,35 @@ async def generate_collage_prompts(
             }
         },
     )
-    text, _provider, _model = await executor.run_text(system_prompt=system, user_prompt=user)
-    payload = extract_json_object(text)
-    master_direction = as_str(payload.get("master_direction"))
-    shots_raw = payload.get("shots")
-    if not isinstance(shots_raw, list) or not shots_raw:
-        raise MalformedAIResponseError("Collage result JSON is missing a non-empty 'shots' array.")
-    shots: list[ShotResult] = []
-    for i, item in enumerate(shots_raw, start=1):
-        if not isinstance(item, dict):
-            continue
-        prompt, negative = _parse_prompt(item)
-        final_prompt, final_negative, quality = _finish(prompt, negative, target, dna)
-        shots.append(
-            ShotResult(
-                index=int(item.get("index") or i),
-                title=as_str(item.get("title")),
-                prompt=final_prompt,
-                negative_prompt=final_negative,
-                quality=quality,
-            )
-        )
-    if not shots:
-        raise MalformedAIResponseError("Collage result contained no usable shots.")
+
+    def _validate(text: str) -> tuple[str, list[tuple[int, str, str, str | None]]]:
+        payload = extract_json_object(text)
+        master = as_str(payload.get("master_direction")) or collage.global_dna.summary
+        shots_raw = payload.get("shots")
+        if not isinstance(shots_raw, list) or not shots_raw:
+            raise MalformedAIResponseError("Collage result JSON is missing a non-empty 'shots' array.")
+        parsed: list[tuple[int, str, str, str | None]] = []
+        for i, item in enumerate(shots_raw, start=1):
+            if not isinstance(item, dict):
+                continue
+            prompt, negative = _parse_prompt(item)
+            parsed.append((int(item.get("index") or i), as_str(item.get("title")), prompt, negative))
+        if not parsed:
+            raise MalformedAIResponseError("Collage result contained no usable shots.")
+        return master, parsed
+
+    outcome = await executor.run_text(
+        system_prompt=system, user_prompt=user, validate=_validate, max_output_tokens=COLLAGE_MAX_OUTPUT_TOKENS
+    )
+    master_direction, parsed_shots = outcome.value
     if not master_direction:
         master_direction = collage.global_dna.summary or collage.global_dna.overall_aesthetic
+    shots: list[ShotResult] = []
+    for index, title, prompt, negative in parsed_shots:
+        final_prompt, final_negative, quality = _finish(prompt, negative, target, dna)
+        shots.append(
+            ShotResult(index=index, title=title, prompt=final_prompt, negative_prompt=final_negative, quality=quality)
+        )
     return master_direction, shots
 
 
@@ -214,10 +229,15 @@ async def refine_optimized_prompt(
     resolved_intent = _with_intent(dna, intent)
     system = _render("modification", target)
     user = _user_payload(dna, resolved_intent, "refine", target, instruction, current_prompt)
-    text, _provider, _model = await executor.run_text(system_prompt=system, user_prompt=user)
-    payload = extract_json_object(text)
-    prompt, negative = _parse_prompt(payload)
-    keep = as_str_list(payload.get("keep"))
-    change = as_str_list(payload.get("change"))
+
+    def _validate(text: str) -> tuple[list[str], list[str], str, str | None]:
+        payload = extract_json_object(text)
+        prompt, negative = _parse_prompt(payload)
+        return as_str_list(payload.get("keep")), as_str_list(payload.get("change")), prompt, negative
+
+    outcome = await executor.run_text(
+        system_prompt=system, user_prompt=user, validate=_validate, max_output_tokens=PROMPT_MAX_OUTPUT_TOKENS
+    )
+    keep, change, prompt, negative = outcome.value
     final_prompt, final_negative, quality = _finish(prompt, negative, target, dna)
     return keep, change, final_prompt, final_negative, quality

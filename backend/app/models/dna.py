@@ -11,7 +11,6 @@ Design rules (spec Phases 1–2):
 The schema is tolerant on input (types strict, presence lenient) so a vision model
 omitting or coercing a field degrades gracefully instead of failing the pipeline.
 """
-from enum import Enum
 from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field
@@ -21,6 +20,8 @@ from app.utils.errors import BadRequestError
 from app.utils.json_utils import as_str, as_str_list
 
 _FLEX = ConfigDict(extra="allow")
+
+DNA_SCHEMA_VERSION = 2
 
 
 # ---------- reference metadata ----------
@@ -262,7 +263,7 @@ class TechnicalRecord(BaseModel):
 
 class VisualDNA(BaseModel):
     model_config = _FLEX
-    schema_version: int = 2
+    schema_version: int = DNA_SCHEMA_VERSION
     reference: ReferenceMeta = Field(default_factory=ReferenceMeta)
     subjects: list[SubjectRecord] = Field(default_factory=list)
     environment: EnvironmentRecord = Field(default_factory=EnvironmentRecord)
@@ -535,4 +536,4 @@ def dna_from_payload(payload: dict[str, Any]) -> VisualDNA:
             )
         else:
             summary = str(e)
-        raise BadRequestError(f"The visual_dna payload is not a valid Visual DNA record — {summary}") from e
+        raise BadRequestError(f"The visual_dna payload is not a valid Visual DNA record: {summary}") from e

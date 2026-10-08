@@ -1,4 +1,17 @@
-"""Image validation and normalization. Trusts magic bytes and decoding, never extensions."""
+"""Image validation and normalization.
+
+Trusts magic bytes and decoding, never file extensions.
+
+Security semantics:
+- MAX_IMAGE_BYTES caps the compressed upload.
+- max_pixels is a DECODED PIXEL BUDGET (width * height) checked from the image
+  header before any full decode, so decompression bombs are rejected cheaply.
+- EXIF orientation is applied before dimensions are reported, so aspect ratios
+  reflect what the viewer sees (critical for phone photos).
+- Transparent images (RGBA/LA/palette transparency) are composited over a white
+  background before RGB conversion, so arbitrary hidden pixel data under the
+  alpha channel never leaks into analysis.
+"""
 import base64
 import io
 import re
@@ -53,10 +66,32 @@ def sniff_format(raw: bytes) -> str:
     raise UnsupportedFormatError("Unrecognized image format. Use PNG, JPG/JPEG or WEBP.")
 
 
-def validate_and_normalize(raw: bytes, max_bytes: int, max_pixels: int) -> tuple[bytes, str, int, int]:
+def _flatten_to_rgb(img: Image.Image) -> Image.Image:
+    """Convert to RGB, compositing transparency over white instead of exposing raw channels."""
+    has_alpha = img.mode in ("RGBA", "LA") or (
+        img.mode == "P" and "transparency" in img.info
+    )
+    if has_alpha:
+        rgba = img.convert("RGBA")
+        background = Image.new("RGBA", rgba.size, (255, 255, 255, 255))
+        return Image.alpha_composite(background, rgba).convert("RGB")
+    return img.convert("RGB")
+
+
+def validate_and_normalize(
+    raw: bytes, max_bytes: int, max_pixels: int, max_side: int = 2048
+) -> tuple[bytes, str, int, int]:
     """Validate an uploaded image and re-encode it as a size-capped JPEG for the vision API.
 
-    Returns (jpeg_bytes, mime, original_width, original_height).
+    Order matters (spec v0.3):
+    1. byte-size and magic-byte checks (cheap)
+    2. header dimensions vs the decoded pixel budget (no full decode yet)
+    3. EXIF transpose
+    4. final dimensions + alpha flattening over white
+    5. downscale to max_side (API cost control) and JPEG re-encode
+
+    Returns (jpeg_bytes, mime, reported_width, reported_height) where the
+    reported dimensions reflect the visually oriented image.
     """
     if not raw:
         raise InvalidImageError("Image data is empty.")
@@ -67,21 +102,27 @@ def validate_and_normalize(raw: bytes, max_bytes: int, max_pixels: int) -> tuple
     sniff_format(raw)
     try:
         with Image.open(io.BytesIO(raw)) as img:
-            img.load()
             if img.format not in ALLOWED_FORMATS:
                 raise UnsupportedFormatError(
                     f"Unsupported image format ({img.format}). Use PNG, JPG/JPEG or WEBP."
                 )
+            # Header read only: Pillow has not decoded pixel data yet.
             width, height = img.size
+            if width * height > max_pixels:
+                raise ImageTooLargeError(
+                    f"Image decodes to {width} × {height} ({width * height:,} pixels); "
+                    f"the limit is {max_pixels:,} pixels."
+                )
             img = ImageOps.exif_transpose(img)
-            rgb = img.convert("RGB")
+            width, height = img.size
+            rgb = _flatten_to_rgb(img)
     except (UnsupportedFormatError, InvalidImageError, ImageTooLargeError):
         raise
     except Exception:
         raise InvalidImageError("The image is corrupted or cannot be decoded.")
 
     try:
-        rgb.thumbnail((max_pixels, max_pixels), Image.LANCZOS)
+        rgb.thumbnail((max_side, max_side), Image.LANCZOS)
         buf = io.BytesIO()
         rgb.save(buf, format="JPEG", quality=90)
         return buf.getvalue(), "image/jpeg", width, height

@@ -18,15 +18,14 @@ export default class ErrorBoundary extends Component<Props, State> {
   }
 
   componentDidCatch(error: Error, info: ErrorInfo) {
-    //eslint-disable-next-line no-console
-    console.error("VISURA render error", error, info.componentStack);
+    console.error("ImPrompt render error", error, info.componentStack);
   }
 
   render() {
     if (this.state.error) {
       return (
         <main className="setup">
-          <div className="brand crash-brand">VISURA</div>
+          <div className="brand crash-brand">ImPrompt</div>
           <div className="card error-banner crash-card" role="alert">
             <span className="error-icon">
               <CircleAlert size={16} />

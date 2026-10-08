@@ -6,6 +6,7 @@ from google.genai import types
 
 from app.utils.errors import (
     AppError,
+    MalformedAIResponseError,
     ProviderError,
     ProviderTimeoutError,
     ProviderUnavailableError,
@@ -21,19 +22,33 @@ class GeminiProvider:
         self._timeout = timeout
 
     async def analyze_image(
-        self, *, model: str, image_bytes: bytes, mime: str, system_prompt: str, user_prompt: str, temperature: float = 0.2
+        self,
+        *,
+        model: str,
+        image_bytes: bytes,
+        mime: str,
+        system_prompt: str,
+        user_prompt: str,
+        temperature: float = 0.2,
+        max_output_tokens: int | None = None,
     ) -> str:
         contents: list = [types.Part.from_bytes(data=image_bytes, mime_type=mime), user_prompt]
-        return await self._call(model, contents, system_prompt, temperature)
+        return await self._call(model, contents, system_prompt, temperature, max_output_tokens)
 
-    async def generate_text(self, *, model: str, system_prompt: str, user_prompt: str, temperature: float = 0.8) -> str:
-        return await self._call(model, user_prompt, system_prompt, temperature)
+    async def generate_text(
+        self, *, model: str, system_prompt: str, user_prompt: str, temperature: float = 0.8,
+        max_output_tokens: int | None = None,
+    ) -> str:
+        return await self._call(model, user_prompt, system_prompt, temperature, max_output_tokens)
 
-    async def _call(self, model: str, contents, system_prompt: str, temperature: float) -> str:
+    async def _call(
+        self, model: str, contents, system_prompt: str, temperature: float, max_output_tokens: int | None
+    ) -> str:
         config = types.GenerateContentConfig(
             system_instruction=system_prompt,
             temperature=temperature,
             response_mime_type="application/json",
+            max_output_tokens=max_output_tokens,
         )
         try:
             response = await asyncio.wait_for(
@@ -48,6 +63,10 @@ class GeminiProvider:
             raise
         except Exception as e:
             raise ProviderUnavailableError(f"Gemini call failed: {type(e).__name__}: {e}")
+        if response is not None and response.candidates:
+            finish = getattr(response.candidates[0], "finish_reason", None)
+            if finish is not None and "MAX_TOKENS" in str(finish):
+                raise MalformedAIResponseError("Gemini response was truncated by the output token limit.")
         text = (response.text or "").strip() if response is not None else ""
         if not text:
             raise ProviderError("Gemini returned an empty response.")

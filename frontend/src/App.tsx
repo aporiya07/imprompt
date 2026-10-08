@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useEffect, useState } from "react";
 import { Moon, ScanSearch, Sun } from "lucide-react";
 import CreativeDirectionCard from "./components/CreativeDirectionCard";
 import DnaViewer from "./components/DnaViewer";
@@ -13,298 +13,111 @@ import RefinePanel from "./components/RefinePanel";
 import ShotsList from "./components/ShotsList";
 import VersionList from "./components/VersionList";
 import WorkingCard from "./components/WorkingCard";
+import { useAnalysis } from "./hooks/useAnalysis";
 import { api, DEFAULT_MODELS } from "./services/api";
-import { errorCodeOf, friendlyMessage, requestIdOf } from "./services/errors";
-import type {
-  CreativeIntent,
-  HistoryItem,
-  Mode,
-  PromptQuality,
-  PromptVersion,
-  PromptVersionSource,
-  ShotResult,
-  TargetModel,
-  UploadedImage,
-  VisualDNA,
-} from "./types";
+import type { HistoryItem, Mode, PromptVersion, TargetModel, UploadedImage } from "./types";
 import { MODE_LABELS } from "./types";
-import { clearHistory, deleteHistoryItem, loadHistory, saveHistoryItem } from "./utils/history";
-import { loadImageFile, thumbnailOf } from "./utils/image";
-
-type Busy = "analyzing" | "regenerating" | "refining" | null;
-
-interface BannerAction {
-  label: string;
-  run: () => void;
-}
-
-function newVersion(
-  source: PromptVersionSource,
-  prompt: string,
-  negative: string | null,
-  extra: Partial<PromptVersion> = {}
-): PromptVersion {
-  return { id: crypto.randomUUID(), source, ts: Date.now(), prompt, negative, ...extra };
-}
+import { APP_VERSION } from "./version";
+import { safeFilenameFromUrl } from "./utils/filename";
+import { clearHistory, deleteHistoryItem, loadHistory } from "./utils/history";
+import { loadImageFile } from "./utils/image";
+import { persistTheme, resolveInitialTheme, type Theme } from "./utils/theme";
+import { errorCodeOf, friendlyMessage, requestIdOf } from "./services/errors";
 
 export default function App() {
-  const [theme, setTheme] = useState<"dark" | "light">(
-    () => (localStorage.getItem("ipa.theme") as "dark" | "light") ?? "dark"
-  );
+  const [theme, setTheme] = useState<Theme>(() => resolveInitialTheme());
   useEffect(() => {
     document.documentElement.dataset.theme = theme;
-    localStorage.setItem("ipa.theme", theme);
+    persistTheme(theme);
   }, [theme]);
 
-  const [image, setImage] = useState<UploadedImage | null>(null);
-  const [mode, setMode] = useState<Mode>("recreate");
   const [models, setModels] = useState<TargetModel[]>(DEFAULT_MODELS);
-  const [targetModel, setTargetModel] = useState("generic");
-  const [instruction, setInstruction] = useState("");
-  const [phase, setPhase] = useState<"setup" | "result">("setup");
-  const [busy, setBusy] = useState<Busy>(null);
-  const [urlBusy, setUrlBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [errorCode, setErrorCode] = useState<string | undefined>(undefined);
-  const [errorRequestId, setErrorRequestId] = useState<string | undefined>(undefined);
-  const [errorAction, setErrorAction] = useState<BannerAction | null>(null);
-  const [dna, setDna] = useState<VisualDNA | null>(null);
-  const [intent, setIntent] = useState<CreativeIntent | null>(null);
-  const [shots, setShots] = useState<ShotResult[]>([]);
-  const [layout, setLayout] = useState<string | null>(null);
-  const [quality, setQuality] = useState<PromptQuality | null>(null);
-  const [prompt, setPrompt] = useState("");
-  const [negative, setNegative] = useState<string | null>(null);
-  const [supportsNegative, setSupportsNegative] = useState(true);
-  const [versions, setVersions] = useState<PromptVersion[]>([]);
-  const [activeVersionId, setActiveVersionId] = useState<string | null>(null);
   const [history, setHistory] = useState<HistoryItem[]>(() => loadHistory());
+
+  const {
+    state,
+    dispatch,
+    supportsNegative,
+    analyze,
+    regeneratePrompt,
+    onModelChange,
+    refine,
+    applyEdit,
+    fetchUrl,
+    modelName,
+  } = useAnalysis({ models, onHistorySaved: setHistory });
 
   useEffect(() => {
     api.models().then(setModels);
   }, []);
 
-  const currentModel = models.find((m) => m.id === targetModel);
-  const currentModelName = currentModel?.name ?? targetModel;
-  const charLimit = currentModel?.soft_char_limit ?? null;
+  const {
+    image,
+    mode,
+    targetModel,
+    instruction,
+    phase,
+    busy,
+    urlBusy,
+    error,
+    errorCode,
+    errorRequestId,
+    errorAction,
+    dna,
+    intent,
+    shots,
+    panels,
+    layout,
+    quality,
+    prompt,
+    negative,
+    versions,
+    activeVersionId,
+  } = state;
 
-  function reportError(e: unknown) {
-    setError(friendlyMessage(e));
-    setErrorCode(errorCodeOf(e));
-    setErrorRequestId(requestIdOf(e));
-    setErrorAction(null);
-  }
-
-  function clearError() {
-    setError(null);
-    setErrorCode(undefined);
-    setErrorRequestId(undefined);
-    setErrorAction(null);
-  }
+  const currentModelName = modelName(targetModel);
+  const charLimit = models.find((m) => m.id === targetModel)?.soft_char_limit ?? null;
 
   function adoptImage(img: UploadedImage) {
-    setImage(img);
-    setDna(null);
-    setIntent(null);
-    setShots([]);
-    setLayout(null);
-    setQuality(null);
-    setPrompt("");
-    setNegative(null);
-    setVersions([]);
-    setActiveVersionId(null);
-    setPhase("setup");
+    dispatch({ type: "IMAGE_ADOPTED", image: img });
   }
 
   async function onFile(file: File) {
-    clearError();
+    dispatch({ type: "CLEAR_ERROR" });
     try {
       adoptImage(await loadImageFile(file));
     } catch (e) {
-      reportError(e);
+      dispatch({
+        type: "SET_ERROR",
+        error: friendlyMessage(e),
+        code: errorCodeOf(e),
+        requestId: requestIdOf(e),
+      });
     }
   }
 
   async function onFetchUrl(url: string) {
-    setUrlBusy(true);
-    clearError();
-    try {
-      const fetched = await api.fetchImage(url);
-      const name = decodeURIComponent(url.split("/").pop()?.split("?")[0] || "image-from-url").slice(0, 80);
-      adoptImage({ dataUrl: fetched.image, width: fetched.width, height: fetched.height, name, size: 0 });
-    } catch (e) {
-      reportError(e);
-    } finally {
-      setUrlBusy(false);
-    }
+    await fetchUrl(url, adoptImage, safeFilenameFromUrl(url));
   }
 
   function reset() {
-    setImage(null);
-    adoptImage({
-      dataUrl: "",
-      width: 0,
-      height: 0,
-      name: "",
-      size: 0,
-    });
-    setImage(null);
-    clearError();
-    setPhase("setup");
-  }
-
-  async function persistHistory(d: VisualDNA, p: string, neg: string | null) {
-    if (!image) return;
-    const item: HistoryItem = {
-      id: crypto.randomUUID(),
-      ts: Date.now(),
-      mode,
-      targetModel,
-      name: image.name,
-      thumbnail: await thumbnailOf(image.dataUrl),
-      dna: d,
-      intent: intent ?? undefined,
-      prompt: p,
-      negative: neg,
-      instruction: mode === "modify" ? instruction.trim() : undefined,
-    };
-    setHistory(saveHistoryItem(item));
-  }
-
-  const analyze = useCallback(async () => {
-    if (!image) return;
-    setBusy("analyzing");
-    clearError();
-    try {
-      const data = await api.analyze({
-        image: image.dataUrl,
-        mode,
-        target_model: targetModel,
-        instruction: mode === "modify" ? instruction.trim() : undefined,
-        generate_prompt: true,
-      });
-      setDna(data.visual_dna);
-      setIntent(data.creative_intent);
-      setShots(data.shots ?? []);
-      setLayout(data.layout_description ?? null);
-      setQuality(data.prompt_quality ?? null);
-      setPrompt(data.prompt ?? "");
-      setNegative(data.negative_prompt);
-      setPhase("result");
-      if (data.prompt_error) {
-        setError(`The image was analyzed, but prompt generation failed: ${data.prompt_error.message}`);
-        setErrorCode(data.prompt_error.code);
-        setErrorAction({ label: "Retry prompt", run: () => void regenerate() });
-      } else {
-        const v = newVersion("analyze", data.prompt ?? "", data.negative_prompt, { targetModel: currentModelName });
-        setVersions([v]);
-        setActiveVersionId(v.id);
-        await persistHistory(data.visual_dna, data.prompt ?? "", data.negative_prompt);
-      }
-    } catch (e) {
-      reportError(e);
-    } finally {
-      setBusy(null);
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [image, mode, targetModel, instruction, currentModelName, intent]);
-
-  async function regenerate(modelId?: string) {
-    if (!dna) return;
-    const target = modelId ?? targetModel;
-    setBusy("regenerating");
-    clearError();
-    try {
-      const data = await api.generatePrompt({
-        visual_dna: dna,
-        creative_intent: intent ?? undefined,
-        mode,
-        target_model: target,
-        instruction: mode === "modify" ? instruction.trim() : undefined,
-      });
-      setPrompt(data.prompt);
-      setNegative(data.negative_prompt);
-      setQuality(data.quality ?? null);
-      const v = newVersion("regenerate", data.prompt, data.negative_prompt, {
-        targetModel: models.find((m) => m.id === target)?.name ?? target,
-      });
-      setVersions((vs) => [...vs, v]);
-      setActiveVersionId(v.id);
-    } catch (e) {
-      reportError(e);
-    } finally {
-      setBusy(null);
-    }
-  }
-
-  function onModelChange(id: string) {
-    setTargetModel(id);
-    const m = models.find((m) => m.id === id);
-    setSupportsNegative(m?.supports_negative ?? true);
-    if (dna && phase === "result") void regenerate(id);
-  }
-
-  async function refine(text: string) {
-    if (!dna || !prompt) return;
-    setBusy("refining");
-    clearError();
-    try {
-      const data = await api.refinePrompt({
-        visual_dna: dna,
-        creative_intent: intent ?? undefined,
-        current_prompt: prompt,
-        instruction: text,
-        mode,
-        target_model: targetModel,
-      });
-      setPrompt(data.prompt);
-      setNegative(data.negative_prompt);
-      setQuality(data.quality ?? null);
-      const v = newVersion("refine", data.prompt, data.negative_prompt, {
-        instruction: text,
-        keep: data.keep,
-        change: data.change,
-      });
-      setVersions((vs) => [...vs, v]);
-      setActiveVersionId(v.id);
-    } catch (e) {
-      reportError(e);
-    } finally {
-      setBusy(null);
-    }
-  }
-
-  function applyEdit(newPrompt: string) {
-    const v = newVersion("edit", newPrompt, negative);
-    setPrompt(newPrompt);
-    setVersions((vs) => [...vs, v]);
-    setActiveVersionId(v.id);
+    dispatch({ type: "RESET" });
   }
 
   function restoreVersion(v: PromptVersion) {
-    setPrompt(v.prompt);
-    setNegative(v.negative);
-    setActiveVersionId(v.id);
+    dispatch({ type: "VERSION_RESTORED", version: v });
   }
 
   function restore(item: HistoryItem) {
-    setImage({ dataUrl: item.thumbnail, width: 0, height: 0, name: item.name, size: 0 });
-    setMode(item.mode);
-    setTargetModel(item.targetModel);
-    setDna(item.dna);
-    setIntent(item.intent ?? null);
-    setShots([]);
-    setLayout(null);
-    setQuality(null);
-    setPrompt(item.prompt);
-    setNegative(item.negative);
-    setSupportsNegative(models.find((m) => m.id === item.targetModel)?.supports_negative ?? true);
-    if (item.instruction) setInstruction(item.instruction);
-    const v = newVersion("analyze", item.prompt, item.negative, { targetModel: item.targetModel });
-    setVersions([v]);
-    setActiveVersionId(v.id);
-    setPhase("result");
-    clearError();
+    const version: PromptVersion = item.versions?.[0] ?? {
+      id: item.id,
+      source: "analyze",
+      ts: item.ts,
+      prompt: item.prompt,
+      negative: item.negative,
+      targetModel: item.targetModel,
+    };
+    dispatch({ type: "HISTORY_RESTORED", item, version });
   }
 
   const refineEntries = versions
@@ -312,12 +125,24 @@ export default function App() {
     .map((v) => ({ instruction: v.instruction ?? "", keep: v.keep ?? [], change: v.change ?? [] }));
 
   const isCollage = shots.length > 0;
+  const modelSelect = (
+    <label className="field">
+      <span className="field-label">Target model</span>
+      <select value={targetModel} onChange={(e) => onModelChange(e.target.value)} disabled={busy !== null}>
+        {models.map((m) => (
+          <option key={m.id} value={m.id}>
+            {m.name}
+          </option>
+        ))}
+      </select>
+    </label>
+  );
 
   return (
     <div className="app">
       <header className="topbar">
         <div className="brand">
-          VISURA
+          ImPrompt
           <span className="brand-descriptor">visual reverse engineering</span>
         </div>
         <div className="topbar-actions">
@@ -339,7 +164,7 @@ export default function App() {
       {error && (
         <ErrorBanner
           message={error}
-          onDismiss={clearError}
+          onDismiss={() => dispatch({ type: "CLEAR_ERROR" })}
           actionLabel={errorAction?.label}
           onAction={errorAction ? () => errorAction.run() : undefined}
           code={errorCode}
@@ -367,19 +192,10 @@ export default function App() {
 
           <div className="controls card">
             <div className="controls-grid">
-              <label className="field">
-                <span className="field-label">Target model</span>
-                <select value={targetModel} onChange={(e) => onModelChange(e.target.value)}>
-                  {models.map((m) => (
-                    <option key={m.id} value={m.id}>
-                      {m.name}
-                    </option>
-                  ))}
-                </select>
-              </label>
+              {modelSelect}
               <label className="field">
                 <span className="field-label">Reference intent</span>
-                <select value={mode} onChange={(e) => setMode(e.target.value as Mode)}>
+                <select value={mode} onChange={(e) => dispatch({ type: "SET_MODE", mode: e.target.value as Mode })}>
                   {(Object.keys(MODE_LABELS) as Mode[]).map((m) => (
                     <option key={m} value={m}>
                       {MODE_LABELS[m]}
@@ -394,7 +210,7 @@ export default function App() {
                 rows={2}
                 placeholder="Describe the change, e.g. “Replace the background with a futuristic laboratory.”"
                 value={instruction}
-                onChange={(e) => setInstruction(e.target.value)}
+                onChange={(e) => dispatch({ type: "SET_INSTRUCTION", instruction: e.target.value })}
               />
             )}
           </div>
@@ -425,8 +241,18 @@ export default function App() {
               {dna && <DnaViewer dna={dna} />}
             </aside>
             <section className="result-right">
-              {busy === "regenerating" && (
-                <WorkingCard label={`Adapting the prompt for ${currentModelName}`} />
+              <div className="controls card result-model">
+                <div className="controls-grid">{modelSelect}</div>
+                <p className="hint">Changing the model rebuilds the prompt from existing Visual DNA. Vision is not re-run.</p>
+              </div>
+              {(busy === "regenerating" || busy === "validating") && (
+                <WorkingCard
+                  label={
+                    busy === "validating"
+                      ? "Revalidating edited prompt"
+                      : `Adapting the prompt for ${currentModelName}`
+                  }
+                />
               )}
               <PromptCard
                 prompt={prompt}
@@ -434,8 +260,17 @@ export default function App() {
                 busy={busy !== null}
                 charLimit={charLimit}
                 label={isCollage ? "Master creative direction" : "Prompt"}
-                onRegenerate={() => void regenerate()}
-                onEdit={applyEdit}
+                onRegenerate={() => {
+                  if (!dna) return;
+                  void regeneratePrompt({
+                    dna,
+                    creativeIntent: intent,
+                    selectedModel: targetModel,
+                    mode,
+                    instruction,
+                  });
+                }}
+                onEdit={(p) => void applyEdit(p)}
               />
               <QualityCard quality={quality} />
               {supportsNegative && negative && <NegativeCard negative={negative} />}
@@ -446,7 +281,12 @@ export default function App() {
                 </p>
               )}
               <CreativeDirectionCard intent={intent} />
-              <ShotsList shots={shots} layout={layout} />
+              <ShotsList
+                shots={shots}
+                layout={layout}
+                referenceUrl={image?.dataUrl ?? null}
+                panels={panels}
+              />
               <RefinePanel busy={busy === "refining"} log={refineEntries} onRefine={(t) => void refine(t)} />
               <VersionList versions={versions} activeId={activeVersionId} onRestore={restoreVersion} />
               <HistoryPanel
@@ -460,7 +300,7 @@ export default function App() {
         </main>
       )}
 
-      <footer className="footer">VISURA · v0.2</footer>
+      <footer className="footer">ImPrompt · v{APP_VERSION}</footer>
     </div>
   );
 }

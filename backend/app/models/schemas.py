@@ -1,11 +1,11 @@
 """Back-compat shim. The contracts now live in focused modules:
 
-- app.models.common   — enums (PromptMode, confidence, reference types)
-- app.models.dna      — Visual DNA v2 + normalization
-- app.models.intent   — CreativeIntent
-- app.models.collage  — collage / moodboard models
-- app.models.quality  — PromptQuality
-- app.models.contracts — API requests/responses + envelope
+- app.models.common   - enums (PromptMode, confidence, reference types)
+- app.models.dna      - Visual DNA v2 + normalization
+- app.models.intent   - CreativeIntent
+- app.models.collage  - collage / moodboard models
+- app.models.quality  - PromptQuality
+- app.models.contracts - API requests/responses + envelope
 
 Import from those modules directly; this file only re-exports for older callers.
 """

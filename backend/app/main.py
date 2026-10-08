@@ -16,8 +16,9 @@ from app.models.contracts import ApiEnvelope, ErrorBody
 from app.providers.registry import build_runtime
 from app.services.observability import request_id_var
 from app.utils.errors import AppError
+from app.version import APP_VERSION
 
-log = logging.getLogger("ipa")
+log = logging.getLogger("imprompt")
 
 
 @asynccontextmanager
@@ -39,16 +40,9 @@ async def lifespan(app: FastAPI):
     yield
 
 
-app = FastAPI(title="VISURA — Image → Prompt AI", version="0.2.0", lifespan=lifespan)
+app = FastAPI(title="ImPrompt", version=APP_VERSION, lifespan=lifespan)
 app.include_router(routes_analysis.router)
 app.include_router(routes_prompt.router)
-
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=get_settings().cors_origin_list,
-    allow_methods=["GET", "POST"],
-    allow_headers=["*"],
-)
 
 
 def _error_response(status_code: int, code: str, message: str, request_id: str, details=None) -> JSONResponse:
@@ -79,6 +73,15 @@ async def request_context_middleware(request: Request, call_next):
         request.method, request.url.path, response.status_code, time.perf_counter() - started, rid,
     )
     return response
+
+
+# CORS last = outermost so even middleware-caught 500s receive CORS headers.
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=get_settings().cors_origin_list,
+    allow_methods=["GET", "POST"],
+    allow_headers=["*"],
+)
 
 
 @app.exception_handler(AppError)

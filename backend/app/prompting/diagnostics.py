@@ -1,6 +1,6 @@
 """Deterministic prompt-quality heuristics (spec Phase 11).
 
-No LLM calls — pure pattern checks so the score is stable and explainable.
+No LLM calls: pure pattern checks so the score is stable and explainable.
 Every warning is actionable; strengths note what the prompt does well.
 """
 import re
@@ -48,7 +48,7 @@ def validate_prompt(
         return PromptQuality(score=0, warnings=["Prompt is empty."], strengths=[])
 
     if len(text) < 60:
-        warnings.append("Prompt is very thin — important visual information is likely missing.")
+        warnings.append("Prompt is very thin: important visual information is likely missing.")
         score -= 25
 
     fillers = sorted({m.group(0).lower() for m in FILLER.finditer(text)})
@@ -75,7 +75,7 @@ def validate_prompt(
             repeated.add(shingle)
         seen.add(shingle)
     if repeated:
-        warnings.append("Contains repeated phrases — tighten the wording so every clause earns its place.")
+        warnings.append("Contains repeated phrases: tighten the wording so every clause earns its place.")
         score -= 6
 
     subject_terms: list[str] = []
@@ -96,25 +96,29 @@ def validate_prompt(
             warnings.append(f"Negative prompt contains filler terms: {', '.join(neg_fillers)}")
             score -= 4
         if len(negative.split(",")) > 12:
-            warnings.append("Negative prompt is a long boilerplate list — keep it specific to this image.")
+            warnings.append("Negative prompt is a long boilerplate list: keep it specific to this image.")
             score -= 4
 
     if target.soft_char_limit and len(text) > target.soft_char_limit:
         warnings.append(f"Prompt exceeds the ~{target.soft_char_limit}-character comfort zone for {target.name}.")
         score -= 5
 
-    prompt_temps = set()
+    prompt_temps: set[str] = set()
     if re.search(r"\bwarm\b", text, re.IGNORECASE):
         prompt_temps.add("warm")
     if re.search(r"\bcool\b", text, re.IGNORECASE):
         prompt_temps.add("cool")
-    dna_temp = dna.color.warm_cool_balance.lower()
-    conflicting = {t for t in prompt_temps if t and t in dna_temp and len(prompt_temps) > 1}
-    if len(prompt_temps) == 2 and dna_temp:
-        warnings.append("Possible color-temperature contradiction — the analysis calls the image "
-                        f"'{dna.color.warm_cool_balance}'.")
-        score -= 4
-    del conflicting  # reserved for finer-grained checks
+    if len(prompt_temps) == 2:
+        # Split lighting ("warm highlights, cool shadows") is a legitimate deliberate
+        # choice; only flag when the two terms are not presented as an intentional pair.
+        paired = bool(re.search(r"\bwarm\b[^.!?]{0,60}\bcool\b|\bcool\b[^.!?]{0,60}\bwarm\b", text, re.IGNORECASE))
+        dna_temp = dna.color.warm_cool_balance.lower()
+        if not paired and dna_temp in ("warm", "cool"):
+            warnings.append(
+                "Possible color-temperature contradiction: the analysis calls the image "
+                f"'{dna.color.warm_cool_balance}'."
+            )
+            score -= 4
 
     if LIGHTING_WORDS.search(text):
         strengths.append("Concrete lighting direction present")

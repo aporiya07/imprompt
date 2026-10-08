@@ -10,22 +10,24 @@ from app.models.contracts import (
     HealthData,
     ModelsData,
     PromptData,
+    QualityData,
     RefineData,
     RefinePromptRequest,
     TargetModelInfo,
+    ValidatePromptRequest,
 )
 from app.models.dna import dna_from_payload
 from app.models.intent import intent_from_payload
 from app.prompting.adapters import all_targets, get_target
+from app.prompting.diagnostics import validate_prompt
 from app.prompting.optimizer import generate_optimized_prompt, refine_optimized_prompt
 from app.providers.registry import Runtime
 from app.services.observability import stage
 from app.utils.errors import BadRequestError
+from app.version import APP_VERSION
 
-log = logging.getLogger("ipa.prompt")
+log = logging.getLogger("imprompt.prompt")
 router = APIRouter()
-
-APP_VERSION = "0.2.0"
 
 
 @router.get("/api/models", response_model=ApiEnvelope[ModelsData])
@@ -65,7 +67,7 @@ async def health(request: Request):
     )
 
 
-def _intent_or_none(payload) :
+def _intent_or_none(payload):
     if payload is None:
         return None
     try:
@@ -74,15 +76,19 @@ def _intent_or_none(payload) :
         return None  # a malformed intent degrades to the deterministic derivation
 
 
+def _dna_or_error(payload):
+    try:
+        return dna_from_payload(payload)
+    except ValueError as e:
+        raise BadRequestError(str(e))
+
+
 @router.post("/api/generate-prompt", response_model=ApiEnvelope[PromptData])
 async def generate_prompt(req: GeneratePromptRequest, request: Request):
     if req.mode == PromptMode.MODIFY and not (req.instruction or "").strip():
         raise BadRequestError("An instruction is required when prompt mode is 'modify'.")
     target = get_target(req.target_model)
-    try:
-        dna = dna_from_payload(req.visual_dna)
-    except ValueError as e:
-        raise BadRequestError(str(e))
+    dna = _dna_or_error(req.visual_dna)
     intent = _intent_or_none(req.creative_intent)
     runtime: Runtime = request.app.state.runtime
     async with stage("prompt_generation"):
@@ -95,10 +101,7 @@ async def generate_prompt(req: GeneratePromptRequest, request: Request):
 @router.post("/api/refine-prompt", response_model=ApiEnvelope[RefineData])
 async def refine_prompt(req: RefinePromptRequest, request: Request):
     target = get_target(req.target_model)
-    try:
-        dna = dna_from_payload(req.visual_dna)
-    except ValueError as e:
-        raise BadRequestError(str(e))
+    dna = _dna_or_error(req.visual_dna)
     intent = _intent_or_none(req.creative_intent)
     runtime: Runtime = request.app.state.runtime
     async with stage("prompt_refinement"):
@@ -108,3 +111,17 @@ async def refine_prompt(req: RefinePromptRequest, request: Request):
     return ApiEnvelope(
         data=RefineData(prompt=prompt, negative_prompt=negative, quality=quality, keep=keep, change=change)
     )
+
+
+@router.post("/api/validate-prompt", response_model=ApiEnvelope[QualityData])
+async def validate_prompt_route(req: ValidatePromptRequest):
+    """Deterministic re-validation for manually edited prompts. No AI calls."""
+    from app.models.dna import VisualDNA
+
+    target = get_target(req.target_model)
+    if req.visual_dna is not None:
+        dna = _dna_or_error(req.visual_dna)
+    else:
+        dna = VisualDNA()
+    quality = validate_prompt(req.prompt.strip(), None, target, dna)
+    return ApiEnvelope(data=QualityData(quality=quality))

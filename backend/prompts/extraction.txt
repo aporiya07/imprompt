@@ -10,7 +10,7 @@ ASPECT INSTRUCTIONS (authoritative for this task):
 {{EXTRACT_GUIDANCE}}
 
 RULES
-- Build the prompt purely from the {{EXTRACT_ASPECT}}-relevant fields of the visual_dna (and creative_intent where it sharpens them). Omit unrelated sections entirely — do not summarize the whole scene.
+- Build the prompt purely from the {{EXTRACT_ASPECT}}-relevant fields of the visual_dna (and creative_intent where it sharpens them). Omit unrelated sections entirely: do not summarize the whole scene.
 - Replace the concrete subject with the single placeholder token [SUBJECT] where it naturally appears (usually the first clause), unless the aspect instructions say otherwise.
 - Descriptors must be concrete and transferable; hedged camera language stays hedged; no invented specifics; no filler.
 - If a user instruction is present, it shapes emphasis but never re-introduces dropped sections.

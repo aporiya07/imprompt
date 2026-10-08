@@ -10,11 +10,14 @@ from openai import (
     NotFoundError,
     OpenAIError,
     PermissionDeniedError,
-    RateLimitError as OpenAIRateLimitError,
     UnprocessableEntityError,
+)
+from openai import (
+    RateLimitError as OpenAIRateLimitError,
 )
 
 from app.utils.errors import (
+    MalformedAIResponseError,
     ProviderError,
     ProviderTimeoutError,
     ProviderUnavailableError,
@@ -29,7 +32,15 @@ class OpenAIProvider:
         self._client = AsyncOpenAI(api_key=api_key, timeout=timeout, max_retries=0)
 
     async def analyze_image(
-        self, *, model: str, image_bytes: bytes, mime: str, system_prompt: str, user_prompt: str, temperature: float = 0.2
+        self,
+        *,
+        model: str,
+        image_bytes: bytes,
+        mime: str,
+        system_prompt: str,
+        user_prompt: str,
+        temperature: float = 0.2,
+        max_output_tokens: int | None = None,
     ) -> str:
         b64 = base64.b64encode(image_bytes).decode("ascii")
         messages = [
@@ -42,23 +53,32 @@ class OpenAIProvider:
                 ],
             },
         ]
-        return await self._create(model, messages, temperature)
+        return await self._create(model, messages, temperature, max_output_tokens)
 
-    async def generate_text(self, *, model: str, system_prompt: str, user_prompt: str, temperature: float = 0.8) -> str:
+    async def generate_text(
+        self, *, model: str, system_prompt: str, user_prompt: str, temperature: float = 0.8,
+        max_output_tokens: int | None = None,
+    ) -> str:
         messages = [
             {"role": "system", "content": system_prompt},
             {"role": "user", "content": user_prompt},
         ]
-        return await self._create(model, messages, temperature)
+        return await self._create(model, messages, temperature, max_output_tokens)
 
-    async def _create(self, model: str, messages: list, temperature: float) -> str:
-        kwargs = {"model": model, "messages": messages, "response_format": {"type": "json_object"}}
+    async def _create(self, model: str, messages: list, temperature: float, max_output_tokens: int | None) -> str:
+        kwargs: dict = {"model": model, "messages": messages, "response_format": {"type": "json_object"}}
+        if max_output_tokens:
+            kwargs["max_completion_tokens"] = max_output_tokens
         try:
             try:
                 response = await self._client.chat.completions.create(**kwargs, temperature=temperature)
             except BadRequestError as e:
-                # Some newer models reject custom temperature values; retry without it.
-                if "temperature" in str(e).lower():
+                # Some models reject custom temperature or completion-token parameter names.
+                msg = str(e).lower()
+                if "temperature" in msg:
+                    response = await self._client.chat.completions.create(**kwargs)
+                elif "max_completion_tokens" in msg or "max_tokens" in msg:
+                    kwargs.pop("max_completion_tokens", None)
                     response = await self._client.chat.completions.create(**kwargs)
                 else:
                     raise
@@ -78,5 +98,9 @@ class OpenAIProvider:
             raise ProviderError(f"OpenAI rejected the request: {e}")
         except OpenAIError as e:
             raise ProviderError(f"OpenAI error: {e}")
+        if response.choices:
+            finish = response.choices[0].finish_reason
+            if finish == "length":
+                raise MalformedAIResponseError("OpenAI response was truncated by the output token limit.")
         content = response.choices[0].message.content if response.choices else None
         return (content or "").strip()

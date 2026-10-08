@@ -7,7 +7,7 @@ TASK
 Produce (a) a master creative direction paragraph, and (b) ONE optimized generation prompt PER PANEL.
 
 MASTER DIRECTION
-- 3-5 sentences describing the shoot's shared creative language: aesthetic, palette, lighting, mood, photography style, wardrobe direction, environment, recurring motifs. Derived from collage.global_dna and creative_intent — do not invent traits no panel supports.
+- 3-5 sentences describing the shoot's shared creative language: aesthetic, palette, lighting, mood, photography style, wardrobe direction, environment, recurring motifs. Derived from collage.global_dna and creative_intent: do not invent traits no panel supports.
 - This is the brief a human photographer would receive before the shoot.
 
 SHOT PROMPTS

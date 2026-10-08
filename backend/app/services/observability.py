@@ -11,7 +11,7 @@ from contextvars import ContextVar
 
 request_id_var: ContextVar[str] = ContextVar("request_id", default="-")
 
-logger = logging.getLogger("ipa.pipeline")
+logger = logging.getLogger("imprompt.pipeline")
 
 
 @asynccontextmanager

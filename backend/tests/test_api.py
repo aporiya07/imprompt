@@ -184,7 +184,6 @@ class TestAnalyze:
         assert r.json()["error"]["code"] == "malformed_ai_response"
 
     def test_aspect_ratio_filled_from_image(self, client, png_bytes):
-        import copy
 
         payload = json.loads(FAKE_VISION_REPLY)
         payload["visual_dna"]["technical"] = {"aspect_ratio": "", "orientation": ""}

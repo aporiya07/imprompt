@@ -145,6 +145,20 @@ export interface ApiEnvelope<T> {
   error: ApiErrorBody | null;
 }
 
+export interface PanelBounds {
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+}
+
+export interface PanelInfo {
+  index: number;
+  title: string;
+  summary: string;
+  bounds: PanelBounds | null;
+}
+
 export interface AnalyzeData {
   reference_type: string;
   layout_description: string | null;
@@ -155,6 +169,7 @@ export interface AnalyzeData {
   prompt_error: { code: string; message: string } | null;
   prompt_quality: PromptQuality | null;
   shots: ShotResult[];
+  panels?: PanelInfo[];
 }
 
 export interface GeneratePromptData {
@@ -204,6 +219,7 @@ export interface PromptVersion {
 }
 
 export interface HistoryItem {
+  historySchemaVersion: number;
   id: string;
   ts: number;
   mode: Mode;
@@ -215,6 +231,11 @@ export interface HistoryItem {
   prompt: string;
   negative: string | null;
   instruction?: string;
+  quality?: PromptQuality | null;
+  shots?: ShotResult[];
+  layout?: string | null;
+  panels?: PanelInfo[];
+  versions?: PromptVersion[];
 }
 
 export interface RefineEntry {

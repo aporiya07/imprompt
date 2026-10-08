@@ -21,7 +21,11 @@ const FRIENDLY: Record<string, string> = {
   provider_error: "The AI provider returned an error. Retrying may help; check the backend logs for details.",
   malformed_ai_response: "The AI returned an unexpected response. Trying again usually fixes this.",
   bad_request: "The request was rejected. Check the input and try again.",
-  network: "Cannot reach the backend. Make sure it's running on port 8000 (uv run uvicorn app.main:app inside backend/).",
+  network:
+    "Cannot reach the backend. Make sure the API server is running (uv run uvicorn app.main:app --reload --port 8000 inside backend/).",
+  http_500:
+    "The API returned an unexpected 500. Make sure the backend is running on the proxy target (default port 8000).",
+  internal_error: "Unexpected server error. Check the backend logs for details.",
 };
 
 export function friendlyMessage(err: unknown): string {

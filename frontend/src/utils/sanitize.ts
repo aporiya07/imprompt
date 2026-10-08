@@ -1,14 +1,10 @@
 /**
- * Typography guardrails for AI-generated copy (UI rules: no em dash in the product).
- * Applied to every API payload before it reaches the UI, so generated text can
- * never surface a banned character. Punctuation is chosen contextually rather
- * than blindly substituting a hyphen. The regex below necessarily contains the
- * banned characters; they are removed, never displayed.
+ * Typography guardrails for application-generated copy (no em dash in product UI).
+ * Must NOT be applied to factual Visual DNA / observed reference typography.
  */
-const DASH_RE = /\s*[—―]\s*/g; // em dash and horizontal bar, the characters this filter strips
+const DASH_RE = /\s*[—―]\s*/g;
 
 export function sanitizeText(text: string): string {
-  // An em dash used as an aside or list separator reads best as a comma.
   return text.replace(DASH_RE, ", ").replace(/\s{2,}/g, " ").trim();
 }
 
@@ -27,4 +23,34 @@ export function sanitizeDeep<T>(value: T): T {
     return out as T;
   }
   return value;
+}
+
+/** Sanitize only presentation fields; leave visual_dna and factual panel text intact. */
+export function sanitizeApiPayload<T extends Record<string, unknown>>(data: T): T {
+  const out: Record<string, unknown> = { ...data };
+  if (typeof out.prompt === "string") out.prompt = sanitizeText(out.prompt);
+  if (typeof out.negative_prompt === "string") out.negative_prompt = sanitizeText(out.negative_prompt);
+  if (typeof out.layout_description === "string") out.layout_description = sanitizeText(out.layout_description);
+  if (out.prompt_quality && typeof out.prompt_quality === "object") {
+    out.prompt_quality = sanitizeDeep(out.prompt_quality);
+  }
+  if (out.quality && typeof out.quality === "object") {
+    out.quality = sanitizeDeep(out.quality);
+  }
+  if (Array.isArray(out.shots)) {
+    out.shots = out.shots.map((shot) => {
+      if (!shot || typeof shot !== "object") return shot;
+      const s = { ...(shot as Record<string, unknown>) };
+      if (typeof s.prompt === "string") s.prompt = sanitizeText(s.prompt);
+      if (typeof s.negative_prompt === "string") s.negative_prompt = sanitizeText(s.negative_prompt);
+      if (typeof s.title === "string") s.title = sanitizeText(s.title);
+      if (s.quality && typeof s.quality === "object") s.quality = sanitizeDeep(s.quality);
+      return s;
+    });
+  }
+  if (out.creative_intent && typeof out.creative_intent === "object") {
+    out.creative_intent = sanitizeDeep(out.creative_intent);
+  }
+  // visual_dna and panels[].summary/title from observation stay untouched
+  return out as T;
 }

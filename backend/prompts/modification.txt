@@ -10,7 +10,7 @@ EDITING RULES
 2. If current_prompt is absent (task="modify"): compose the full prompt from visual_dna + creative_intent with the instruction's changes applied.
 3. If the instruction conflicts with the DNA (e.g. "replace the person with a male model" while the DNA describes a woman), follow the instruction: rewrite the affected elements coherently and keep everything else (composition, lighting, environment, style) intact.
 4. creative_intent.preserve is a hard constraint list: an instruction may only override it when it explicitly targets that element.
-5. The result must remain a complete, self-contained generation prompt for the target model — never a diff, never an explanation, never the instruction appended verbatim.
+5. The result must remain a complete, self-contained generation prompt for the target model: never a diff, never an explanation, never the instruction appended verbatim.
 6. Apply the standard quality rules: structure by 1 subject → 2 composition → 3 spatial relationships → 4 camera → 5 lighting → 6 environment → 7 materials → 8 color → 9 style → 10 mood; banned filler words; hedged camera language stays hedged.
 7. "keep"/"change" entries: short aspect names ("subject", "composition", "lighting", "background", "palette", "style", "mood", "typography").
 

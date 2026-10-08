@@ -48,7 +48,7 @@ export function formatBytes(bytes: number): string {
   return `${(bytes / 1048576).toFixed(1)} MB`;
 }
 
-export async function thumbnailOf(dataUrl: string, max = 180): Promise<string> {
+export async function thumbnailOf(dataUrl: string, max = 320): Promise<string> {
   try {
     const img = await new Promise<HTMLImageElement>((resolve, reject) => {
       const i = new Image();
@@ -64,6 +64,36 @@ export async function thumbnailOf(dataUrl: string, max = 180): Promise<string> {
     if (!ctx) return "";
     ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
     return canvas.toDataURL("image/jpeg", 0.72);
+  } catch {
+    return "";
+  }
+}
+
+/** Crop a panel thumbnail from the reference using normalized bounds (0..1). */
+export async function cropPanelThumb(
+  dataUrl: string,
+  bounds: { x: number; y: number; w: number; h: number },
+  max = 160
+): Promise<string> {
+  try {
+    const img = await new Promise<HTMLImageElement>((resolve, reject) => {
+      const i = new Image();
+      i.onload = () => resolve(i);
+      i.onerror = reject;
+      i.src = dataUrl;
+    });
+    const sx = Math.max(0, Math.round(bounds.x * img.naturalWidth));
+    const sy = Math.max(0, Math.round(bounds.y * img.naturalHeight));
+    const sw = Math.max(1, Math.round(bounds.w * img.naturalWidth));
+    const sh = Math.max(1, Math.round(bounds.h * img.naturalHeight));
+    const scale = Math.min(1, max / Math.max(sw, sh));
+    const canvas = document.createElement("canvas");
+    canvas.width = Math.max(1, Math.round(sw * scale));
+    canvas.height = Math.max(1, Math.round(sh * scale));
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return "";
+    ctx.drawImage(img, sx, sy, sw, sh, 0, 0, canvas.width, canvas.height);
+    return canvas.toDataURL("image/jpeg", 0.7);
   } catch {
     return "";
   }

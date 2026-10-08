@@ -1,4 +1,4 @@
-"""Live end-to-end check against the real AI providers (v0.2 pipeline).
+"""Live end-to-end check against the real AI providers (v0.3 pipeline).
 
 Runs three checks:
   1. single image: analyze → Visual DNA v2 + CreativeIntent + prompt (Midjourney format)

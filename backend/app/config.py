@@ -21,14 +21,22 @@ class Settings(BaseSettings):
     prompt_provider: str = "openai"
     enable_fallback: bool = True
 
-    gemini_vision_model: str = "gemini-2.5-flash"
-    gemini_prompt_model: str = "gemini-2.5-flash"
-    openai_vision_model: str = "gpt-4.1"
-    openai_prompt_model: str = "gpt-4.1"
+    # Defaults match backend/.env.example; override via env for other deployments.
+    gemini_vision_model: str = "gemini-3.8-flash"
+    gemini_prompt_model: str = "gemini-3.1-flash-lite"
+    openai_vision_model: str = "gpt-6-luna"
+    openai_prompt_model: str = "gpt-6-luna"
 
     max_image_mb: float = 10.0
-    max_image_pixels: int = 2048
+    # Decoded pixel budget (width * height), enforced before full decode.
+    max_image_pixels: int = 24_000_000
+    # Longest allowed side after normalization (API cost control, not a security limit).
+    max_image_side: int = 2048
     ai_timeout_seconds: float = 120.0
+    # Deterministic AI call budget: primary gets two attempts (transient error or
+    # malformed output), the fallback provider gets one. Worst case = 3 calls.
+    ai_primary_attempts: int = 2
+    ai_fallback_attempts: int = 1
     cors_origins: str = "http://localhost:5173,http://127.0.0.1:5173"
 
     log_level: str = "INFO"
