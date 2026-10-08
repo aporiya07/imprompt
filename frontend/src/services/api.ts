@@ -60,10 +60,14 @@ async function post<T extends Record<string, unknown>>(
   }
   const headerRequestId = res.headers.get("x-request-id") ?? undefined;
   const rawText = await res.text();
-  let envelope: { success?: boolean; data?: unknown; error?: { code?: string; message?: string; request_id?: string } } | null =
-    null;
+  type EnvelopeBody = {
+    success?: boolean;
+    data?: unknown;
+    error?: { code?: string; message?: string; request_id?: string };
+  };
+  let envelope: EnvelopeBody | null = null;
   try {
-    envelope = rawText ? (JSON.parse(rawText) as typeof envelope) : null;
+    envelope = rawText ? (JSON.parse(rawText) as EnvelopeBody) : null;
   } catch {
     envelope = null;
   }
