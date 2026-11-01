@@ -257,6 +257,10 @@ The same backend and frontend checks run in [GitHub Actions](.github/workflows/c
 - Never invent unsupported camera metadata or hidden anatomy.
 - Keep diagnostics deterministic and explainable.
 
+## Visuals and results
+
+<!-- TODO: add example reference images, the generated Visual DNA output, and the resulting prompts or reconstructions here. -->
+
 ## Roadmap
 
 ### Current
@@ -273,4 +277,4 @@ If ImPrompt is exposed beyond localhost, authentication, rate limiting, distribu
 
 ## License
 
-No license file is currently present in the repository. Add an explicit license before distributing ImPrompt as an open-source package.
+Released under the MIT License. See [LICENSE](LICENSE).
